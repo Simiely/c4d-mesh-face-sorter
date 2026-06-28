@@ -143,6 +143,13 @@ action_type = offset % 3
 
 ## 踩坑记录
 
+### 主文件必须为 .pyp 扩展名
+
+C4D 启动时只扫描 `plugins/` 目录下扩展名为 `.pyp` / `.pypv` 的文件来加载插件。
+`.py` 文件会被完全忽略，即使放在插件目录中也不会被执行、不会报错、不会出现在菜单中。
+
+如果插件安装后不显示，第一个检查项就是扩展名是否正确。
+
 ### BIT_HIDDEN vs Hide()
 
 C4D 有两种"隐藏"：`obj.SetBit(c4d.BIT_HIDDEN)` 和 `obj.Hide(True)`。

@@ -41,6 +41,21 @@ git clone https://github.com/Simiely/c4d-mesh-face-sorter.git
 
 将文件夹按方式一的步骤复制到 C4D 插件目录。
 
+### 验证安装
+
+启动 C4D 后，检查 **扩展 > Mesh Face Sorter** 菜单项是否出现。
+如果出现，点击即可打开面板。
+
+### 常见问题（Troubleshooting）
+
+| 问题 | 原因 | 解决方案 |
+|---|---|---|
+| **菜单没有出现** | 插件文件夹位置不对或结构错误 | 确认文件夹直接放在 `plugins/` 下，里面直接包含 `mesh_face_sorter.pyp` 和 `res/` 目录（不是嵌套两层） |
+| **C4D 控制台报错** | 插件 ID 冲突或加载异常 | 打开 C4D 控制台（Shift+F10），查看 `[MeshFaceSorter]` 开头的错误信息 |
+| **重启后依旧不显示** | C4D 缓存了旧插件列表 | 删除 `plugins/c4d-mesh-face-sorter` 文件夹重新放置，或者尝试清除 C4D 缓存目录 |
+
+> **注意：** C4D 插件主文件必须是 `.pyp` 扩展名（不是 `.py`）。如果下载后看到的是 `.py` 文件，请手动重命名为 `.pyp`。
+
 ---
 
 ## 使用方法

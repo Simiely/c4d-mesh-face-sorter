@@ -1,0 +1,7 @@
+STRINGTABLE NAME
+{
+  ID_PLUGIN_NAME "Mesh Face Sorter";
+  ID_PLUGIN_HELP "Sort mesh objects by face/vertex count or estimated memory size";
+  ID_DECIMATE_TAG "Polygon Reduction";
+  ID_MENU_EXTENSIONS "Extensions";
+}

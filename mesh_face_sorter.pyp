@@ -15,7 +15,7 @@ from c4d import gui
 # ──────────────────────────────────────────────
 # Plugin metadata
 # ──────────────────────────────────────────────
-PLUGIN_ID = 1052327
+PLUGIN_ID = 1052328
 PLUGIN_NAME = "Mesh Face Sorter"
 PLUGIN_HELP = "按面数/顶点数/存储大小排列网格体"
 
@@ -991,25 +991,26 @@ class MeshSorterCommand(c4d.plugins.CommandData):
 # ──────────────────────────────────────────────
 def main():
     """插件入口函数（C4D 自动调用）"""
+    try:
+        icon_data = None
 
-    # 注册命令
-    icon_data = None  # 无图标，使用默认
+        result = c4d.plugins.RegisterCommandPlugin(
+            PLUGIN_ID,
+            PLUGIN_NAME,
+            c4d.PLUGINFLAG_COMMAND_HOTKEY,
+            icon_data,
+            PLUGIN_HELP,
+            MeshSorterCommand(),
+        )
 
-    result = c4d.plugins.RegisterCommandPlugin(
-        PLUGIN_ID,
-        PLUGIN_NAME,
-        c4d.PLUGINFLAG_COMMAND_HOTKEY,
-        icon_data,
-        PLUGIN_HELP,
-        MeshSorterCommand(),
-    )
+        if result:
+            print(f"[MeshFaceSorter] 插件已加载，ID: {PLUGIN_ID}")
+            print(f"[MeshFaceSorter] 在菜单 扩展 > {PLUGIN_NAME} 中打开面板")
+        else:
+            print(f"[MeshFaceSorter] 错误：注册失败（ID {PLUGIN_ID} 冲突？）")
 
-    if not result:
-        raise RuntimeError(f"Failed to register plugin: {PLUGIN_NAME}")
-
-    print(f"[MeshFaceSorter] 插件已加载，ID: {PLUGIN_ID}")
-    print(f"[MeshFaceSorter] 在菜单 扩展 > {PLUGIN_NAME} 中打开面板")
+    except Exception as e:
+        print(f"[MeshFaceSorter] 加载异常：{e}")
 
 
-if __name__ == "__main__":
-    main()
+main()
