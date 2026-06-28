@@ -982,9 +982,6 @@ class MeshSorterCommand(c4d.plugins.CommandData):
         self.dialog.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 500)
         return True
 
-    def GetResourceSymbol(self):
-        return "C4D_MESH_FACE_SORTER"
-
 
 # ──────────────────────────────────────────────
 # Plugin registration

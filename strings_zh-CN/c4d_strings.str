@@ -1,7 +1,0 @@
-STRINGTABLE NAME
-{
-  ID_PLUGIN_NAME "网格排序器";
-  ID_PLUGIN_HELP "按面数/顶点数/存储大小排列网格体";
-  ID_DECIMATE_TAG "减面";
-  ID_MENU_EXTENSIONS "扩展";
-}
