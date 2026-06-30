@@ -1,201 +1,96 @@
 # 开发文档
 
-记录关键设计决策、C4D SDK 踩坑与解法，供后续迭代参考。
+记录开发过程中的关键问题和解决思路。
 
-## 架构
+---
 
-```
-mesh_face_sorter.py  (~1015 行，单文件插件)
-│
-├─ _Cache                 缓存层（核心）
-├─ _ScanStatus            扫描进度状态
-├─ _scan_meshes()         递归扫描入口
-├─ collect_mesh_stats()   缓存 + 排序
-├─ _collect_all_objects() 递归收集场景物体
-├─ _estimate_mesh_size()  内存占用估算
-├─ format_number/format_size  数字格式化
-│
-├─ add_decimate_tag()     添加 Polygon Reduction Tag
-├─ apply_decimate()       应用减面（c4d.utils.PolygonReduction）
-│
-├─ MeshSorterDialog       GeDialog 主面板
-│   ├─ CreateLayout()     构建 UI（分组/按钮/列表/进度条）
-│   ├─ Timer()            定时刷新（1s间隔）
-│   ├─ Command()          事件调度中心
-│   │   ├─ 刷新/选中/全选/孤立/显示全部
-│   │   ├─ 删除空网格/清理数据/导出 md 报表
-│   │   └─ 批量减面/单物体减面/应用减面
-│   └─ _build_list()      动态构建 ScrollGroup 列表行
-│
-├─ MeshSorterCommand      CommandData 注册入口
-└─ main()                 插件入口
-```
+## 1. 对话框显示空白
 
-## 与 Blender 版的关键差异
+**现象：** 面板打开后完全空白，没有任何控件。
 
-### 1. 对象模型差异
+**原因：** 异步对话框的 Python 对象被垃圾回收了。
 
-| 概念 | Blender (bpy) | C4D (c4d) |
-|---|---|---|
-| 对象遍历 | `bpy.data.objects`（平铺） | `doc.GetObjects()`（顶层）+ 递归 `GetChildren()` |
-| 多边形判断 | `obj.type == 'MESH'` | `obj.IsInstanceOf(c4d.Opolygon)` |
-| 面数获取 | `len(mesh.polygons)` | `polyObj.GetPolygonCount()` |
-| 点数获取 | `len(mesh.vertices)` | `polyObj.GetPointCount()` |
-| 选中状态 | `obj.select_get()` | `obj.GetBit(c4d.BIT_ACTIVE)` |
-| 隐藏状态 | `obj.hide_get()` | `obj.GetBit(c4d.BIT_HIDDEN)` |
-| 选中物体 | `obj.select_set(True)` | `obj.SetBit(c4d.BIT_ACTIVE)` + `doc.SetActiveObject(obj)` |
-| 隐藏物体 | `obj.hide_set(True)` | `obj.SetBit(c4d.BIT_HIDDEN)` |
-| 删除物体 | `bpy.data.objects.remove(obj)` | `obj.Remove()` |
+`Execute()` 中用局部变量 `dlg = Dialog()`，函数返回后 `dlg` 被回收，C4D 窗口失去 Python 回调连接，显示空白。
 
-### 2. 减面机制差异
+**解决：** 用 `self._dlg` 保存引用，并将 `Execute` 改为切换式（打开/关闭）。
 
-| 概念 | Blender | C4D |
-|---|---|---|
-| 非破坏性 | Decimate Modifier | Polygon Reduction Tag (`c4d.Tpolyredux`) |
-| 破坏性应用 | `modifier_apply()` | `c4d.utils.PolygonReduction.PreProcess()` + `SetReductionStrengthLevel()` |
-| 参数单位 | ratio = 保留比例 | strength = 减少强度（1.0 - ratio） |
-| 边界保护 | 默认开启 | 需手动设置 `POLYREDUXTAG_PRESERVE_3D_BOUNDARY`/`_UV_BOUNDARY` |
-
-### 3. UI 框架差异
-
-| 概念 | Blender | C4D |
-|---|---|---|
-| 面板容器 | 3D 视图侧边栏自动嵌入 | GeDialog 浮动/停靠对话框 |
-| 面板刷新 | `draw()` 每帧调用 | `Timer(msg)` 定时刷新（1s） |
-| 动态列表 | Panel 循环生成 UI 控件 | `LayoutFlushGroup()` + `LayoutChanged()` 重建 |
-| 进度条 | `wm.progress_begin/end` | `AddProgressBar()` + `SetFloat()` |
-| 确认对话框 | `invoke_props_dialog` | `gui.QuestionDialog()` / `gui.MessageDialog()` |
-| 文件选择器 | `fileselect_add` | `c4d.storage.SaveDialog()` |
-| 控件 ID | 字符串（如 `"object_name"`） | 整数 Gadget ID |
-| 数据属性 | `bpy.types.Scene` Property | 仅内存变量 + 对话框本地存储 |
-
-### 4. 边数统计移除
-
-C4D 没有直接的边（edge）数组 API。Blender 版中 `mesh.edges` 提供边数，
-C4D 的 PolygonObject 没有等价方法，因此统计中移除了边数列。
-
-## 关键设计决策
-
-### 1. 手动刷新 vs 自动监听
-
-**问题**：如何在 C4D 中感知场景变化并刷新列表？
-
-**决策**：纯手动刷新。用户点击「刷新列表」才重扫。与 Blender 版一致。
-
-**C4D 差异**：C4D 没有 Blender 的 `depsgraph_update_post` 事件。虽然有 `CoreMessage()` 可
-监听文档变更，但过于频繁且难以区分无关变更。手动刷新更可靠。
-
-### 2. 缓存粒度
-
-**问题**：切换排序方式需要重新扫描吗？
-
-**决策**：缓存存原始扫描数据，排序在 `collect_mesh_stats()` 中即时完成。
-切换排序方式不重扫，只重排。与 Blender 版一致。
-
-### 3. 存储大小估算
-
-**问题**：C4D 没有 `obj.size_in_bytes` API。
-
-**决策**：基于点(24B) + 多边形(16B) + UVW 标签 + 顶点色标签估算。
-同样通过 try/except 保障兼容性。
-
-**C4D 差异**：UVW 标签数据通过 `GetSlow()` 获取（比 Blender 的 `uv_layer.data` 
-更慢，但仅在扫描时调用一次，影响可接受）。顶点色标签使用 `GetDataAddressW()`。
-
-### 4. GeDialog 动态列表重建
-
-**问题**：C4D 的 GeDialog 不支持声明式 UI 绑定，列表行需要手动创建/销毁。
-
-**决策**：每次刷新调用 `LayoutFlushGroup(GID_LIST_GROUP)` 清空，
-再重新 `GroupBegin` + 逐行 `AddButton` / `AddStaticText`，最后
-`LayoutChanged(GID_LIST_GROUP)` 触发重绘。
-
-**思考**：这是 C4D GeDialog 的标准模式。优点是控制精确，
-缺点是重建高频操作时可能闪烁（通过 Timer 1s 间隔缓解）。
-
-### 5. 列表行按钮的 Gadget ID 编码
-
-**问题**：每个列表行有 3 个按钮（选中/孤立/减面），如何区分点击？
-
-**决策**：使用 `GID_LIST_ROW_BASE + idx * 3 + action_type` 的三合一编码。
-`Command()` 中通过偏移量解码出行索引和动作类型。
+**思考：** C4D Python SDK 的「引用计数 + C++ 对象生命周期」容易踩坑。官方示例虽用 `global` 解决，但正确做法是 **CommandData 保持对话框引用**。
 
 ```python
-offset = gid - GID_LIST_ROW_BASE
-row_index = offset // 3
-action_type = offset % 3
+if self._dlg is None or not self._dlg.IsOpen():
+    self._dlg = Dialog()
+    self._dlg.Open(...)
+else:
+    self._dlg.Close()
+    self._dlg = None
 ```
 
-### 6. 减面方案选择：Tag vs Generator
+---
 
-**决策**：选择 Polygon Reduction **Tag** (`c4d.Tpolyredux`)，而非 Generator (`c4d.Opolyreduxgen`)。
+## 2. 第二次打开崩溃
 
-理由：
-- Tag 不改变场景层级，Generator 需要将物体移入子级，破坏原有结构
-- Tag 每个物体独立控制参数，Generator 多个子级共享参数
-- Tag 在撤销时随物体走，Generator 的层级变动导致撤销栈更复杂
-- 工作流与 Blender 版一致（添加修改器/添加 Tag）
+**现象：** 第一次打开正常，关闭后再次打开 → C4D 崩溃。
 
-### 7. `GH_TOKEN` 环境变量
+**崩溃栈：** `Py_HashPointer` + `PyIter_Send` —— Python 尝试 hash 已释放的 C4D 对象。
 
-`gh` CLI 的登录需要 `read:org` scope，但经典 token 可能缺少这个 scope。
-通过 `GH_TOKEN` 环境变量可以直接使用 token，跳过 scope 检查。
+**根因：** `RestoreLayout()` 未正确处理。C4D 可能在用户关闭对话框后调用 `RestoreLayout` 恢复布局，如果该函数尝试 `Open()` 一个已经销毁的旧对话框，导致崩溃。
 
-## 踩坑记录
+**解决：** `RestoreLayout` 直接返回 `True`（不做任何操作），加上 `dialogid=0` 避免与插件 ID 冲突。
 
-### 主文件必须为 .pyp 扩展名
+**思考：** C4D 对异步对话框的生命周期管理有两个入口（`Execute` 和 `RestoreLayout`），第二个很容易被忽略。在处理「第二次打开崩溃」时，花了多次迭代才定位到 `RestoreLayout`。
 
-C4D 启动时只扫描 `plugins/` 目录下扩展名为 `.pyp` / `.pypv` 的文件来加载插件。
-`.py` 文件会被完全忽略，即使放在插件目录中也不会被执行、不会报错、不会出现在菜单中。
+---
 
-如果插件安装后不显示，第一个检查项就是扩展名是否正确。
+## 3. 按钮不显示（GroupBegin 的 name 参数）
 
-### BIT_HIDDEN vs Hide()
+**现象：** 添加排序下拉框后，所有按钮都不显示了。
 
-C4D 有两种"隐藏"：`obj.SetBit(c4d.BIT_HIDDEN)` 和 `obj.Hide(True)`。
-`BIT_HIDDEN` 控制视口可见性但物体仍在场景中，`Hide()` 涉及编辑器/渲染可见性。
-本插件使用 `BIT_HIDDEN` 以保持与 Blender 版行为一致。
+**根因：** `GroupBegin` 不接受 `name=` 关键词参数，它用的是 `title=`。错误写法 `GroupBegin(id, flags, cols, rows, name="xxx")` 抛出 `TypeError`，`CreateLayout` 提前退出，后面控件全部被跳过。
 
-### BIT_ACTIVE 与 SetActiveObject 需要配合
+**修复：** 去掉 `name=`，改用位置参数 `GroupBegin(id, flags, cols, rows, "xxx")`。
 
-仅 `obj.SetBit(c4d.BIT_ACTIVE)` 不够，还必须调用 `doc.SetActiveObject(obj)`
-才能真正让物体在场景中高亮。如果只设 BIT 不设 Active，属性管理器不会更新。
+**思考：** C4D 很多方法的参数名与常规理解不同（`AddStaticText` 用 `name=`，`GroupBegin` 却用 `title=`）。这种不一致导致了一个无声崩溃 —— 没有错误弹窗，只有第一个 StaticText 可见。
 
-### GetSlow() 性能
+---
 
-UVW Tag 的 `GetSlow()` 在大网格（百万面）上可能较慢。
-好在只在扫描时调用一次，且 `_estimate_mesh_size()` 有 try/except 保护。
+## 4. 孤立显示无效（Hide() 不存在）
 
-### PolygonReduction 的 PreProcess 调用
+**现象：** 点击 O 按钮后物体没有隐藏。
 
-`c4d.utils.PolygonReduction.PreProcess(data)` 要求 `data` 字典包含
-`_op`, `_doc`, `_settings`, `_thread` 四个键，缺一不可。
-`_thread` 传 `None` 表示同步执行（不在后台线程中）。
+**根因：** C4D Python SDK 中 **`BaseObject.Hide()` 方法不存在**。第一次尝试 `SetBit(BIT_HIDDEN)` 无效果，第二次尝试 `Hide(True)` → `AttributeError` 被 try/except 静默吞掉。
 
-### MakeTag 后的参数设置
+**修复：** 改用 `SetBit(BIT_IGNOREDRAW)` 控制编辑器绘制可见性。经测试 `BIT_IGNOREDRAW` 是 `BaseList2D` 中与可见性最直接相关的标志。
 
-`obj.MakeTag(c4d.Tpolyredux)` 返回的 tag 对象需要立即设置参数。
-部分参数（如 `POLYREDUXTAG_PRESERVE_3D_BOUNDARY`）需在创建后立即设置才生效。
+**思考：** C4D Python API 没有统一的「隐藏/显示」接口，可见性控制分散在 Bit 标志、图层参数、描述参数中。`BIT_IGNOREDRAW` 是最简单可靠的方案。
 
-### 插件 ID 唯一性
+---
 
-使用 `1052327` 作为开发 ID。生产环境应替换为 Maxon 分配的正式 ID，
-或使用 PluginID 注册系统获取唯一 ID。
+## 5. 排序后选中错误
 
-## 扩展方向
+**现象：** 排序后列表顺序变了，点击第 2 行选中的却是错误物体。
 
-- **Collection/层级筛选**：按特定层级或标签筛选扫描范围
-- **实时扫描进度**：在 C4D 状态栏显示进度信息
-- **批量导出**：将排序结果导出为 CSV/JSON 格式
-- **多文档支持**：同时扫描多个打开文档
+**根因：** 数据分两个列表：`_objects`（未排序）和 `_sorted_objects`（排序后显示）。`_handle_row` 用排序后的行索引去 `_objects` 中查找，取错了物体。
 
-## 提交规范
+**修复：** 每次刷新列表时将排序结果存入 `self._sorted_objects`，`_handle_row` 一律用 `_sorted_objects` 查找。
 
-```
-feat: 新功能
-fix: 修复
-perf: 性能优化
-refactor: 重构
-chore: 工程相关（重命名、版本号等）
-docs: 文档
-```
+**思考：** 数据层和展示层分离时，必须保持「展示索引 → 数据索引」的一致映射。用独立字段保存排序后的列表比实时计算更安全。
+
+---
+
+## 6. ScrollGroupEnd 不存在
+
+**现象：** C4D 2024 报 `AttributeError: 'GeDialog' has no attribute 'ScrollGroupEnd'`。
+
+**修复：** 用 `GroupEnd()` 结束滚动组。
+
+**思考：** C4D Python SDK 中部分 API 与 C++ SDK 不完全一致（`ScrollGroupBegin` 存在但 `ScrollGroupEnd` 不存在）。开发时应以 Python SDK 文档为准。
+
+---
+
+## 7. 扫描参数化物体
+
+**现象：** `GetPolygonCount()` 对参数化物体（未 C 掉的立方体、球体）返回 0。
+
+**修复：** 先用 `GetPolygonCount()`，如果为 0 且不是 `Opolygon` 类型，则尝试 `GetCache()` 获取生成后的多边形数据递归统计。
+
+**思考：** C4D 的参数化物体没有直接的面数数据，需要通过缓存获取。`_count_faces_recursive()` 成为了整个插件的基石函数。
