@@ -315,9 +315,6 @@ class MeshSorterDialog(gui.GeDialog):
 
 # ────────────── Command ──────────────
 class MeshSorterCommand(c4d.plugins.CommandData):
-
-# ────────────── Command ──────────────
-class MeshSorterCommand(c4d.plugins.CommandData):
     _dlg = None
 
     def Execute(self, doc):
