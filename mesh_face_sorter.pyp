@@ -204,8 +204,8 @@ class MeshSorterDialog(gui.GeDialog):
         if not self._objects:
             gui.MessageDialog("请先点击「刷新」扫描场景。")
             return
-        path = c4d.storage.SaveDialog(title="导出 MD 报表", flags=c4d.FILESELECT_SAVE,
-                                      def_path="", def_file="mesh_report.md")
+        path = c4d.storage.SaveDialog(c4d.FILESELECTTYPE_ANYTHING,
+                                      "导出 MD 报表", ".md", "", "mesh_report.md")
         if not path:
             return
         if not path.lower().endswith(".md"):
@@ -273,21 +273,29 @@ class MeshSorterDialog(gui.GeDialog):
             doc.EndUndo()
             c4d.EventAdd()
             self._do_refresh()
-        elif action == 2:  # 减面 Tag
+        elif action == 2:  # 减面（直接减面，非破坏性 Tag 在 C4D 2024 Python 中不可用）
             faces = _count_faces_recursive(obj)
             if faces == 0:
+                print("[MeshFaceSorter] 物体没有多边形数据，无法减面")
                 return
-            if obj.GetTag(c4d.Tpolyredux):
-                return
-            doc.StartUndo()
-            tag = obj.MakeTag(c4d.Tpolyredux)
-            if tag:
-                tag[c4d.POLYREDUXTAG_STRENGTH] = 0.5
-                tag[c4d.POLYREDUXTAG_PRESERVE_3D_BOUNDARY] = True
-                tag[c4d.POLYREDUXTAG_PRESERVE_UV_BOUNDARY] = True
-                doc.AddUndo(c4d.UNDOTYPE_NEW, tag)
-            doc.EndUndo()
-            c4d.EventAdd()
+            try:
+                doc.StartUndo()
+                # 使用 c4d.utils.PolygonReduction 直接减面
+                pred = c4d.utils.PolygonReduction()
+                if pred:
+                    settings = c4d.BaseContainer()
+                    settings[c4d.POLYREDUXOBJECT_PRESERVE_3D_BOUNDARY] = True
+                    settings[c4d.POLYREDUXOBJECT_PRESERVE_UV_BOUNDARY] = True
+                    data = {"_op": obj, "_doc": doc, "_settings": settings, "_thread": None}
+                    if pred.PreProcess(data):
+                        pred.SetReductionStrengthLevel(0.5)  # 保留 50%
+                        obj.Message(c4d.MSG_UPDATE)
+                doc.AddUndo(c4d.UNDOTYPE_CHANGE, obj)
+                doc.EndUndo()
+                c4d.EventAdd()
+                print(f"[MeshFaceSorter] 已为 {obj.GetName()} 减面")
+            except Exception as e:
+                print(f"[MeshFaceSorter] 减面失败: {e}")
 
     def _refresh_list(self):
         objs = self._objects
