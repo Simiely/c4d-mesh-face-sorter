@@ -96,8 +96,8 @@ class MeshSorterDialog(gui.GeDialog):
                                name="",
                                borderstyle=c4d.BORDER_NONE)
 
-        # 排序区
-        self.GroupBegin(1020, c4d.BFH_SCALEFIT, 3, 1, name="排序：")
+        # 排序区：一行内放置标签 + 下拉框 + 按钮
+        self.GroupBegin(1020, c4d.BFH_SCALEFIT, 3, 0, name="排序：")
         self.AddComboBox(self.GID_SORT_COMBO, c4d.BFH_SCALEFIT, 120, 12)
         self.AddChild(self.GID_SORT_COMBO, 0, "面数")
         self.AddChild(self.GID_SORT_COMBO, 1, "存储大小")
@@ -112,7 +112,8 @@ class MeshSorterDialog(gui.GeDialog):
         self.ScrollGroupBegin(self.GID_LIST_SCROLL,
                               c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 380, 200)
         self.GroupBegin(self.GID_LIST_GROUP,
-                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 1)
+                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
+        self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0, name="（点击「刷新列表」开始扫描）")
         self.GroupEnd()
         self.ScrollGroupEnd()
 
@@ -200,7 +201,7 @@ class MeshSorterDialog(gui.GeDialog):
         # 构建列表
         self.LayoutFlushGroup(self.GID_LIST_GROUP)
         self.GroupBegin(self.GID_LIST_GROUP,
-                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 1)
+                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
 
         # 表头
         sort_label = "面数" if self.sort_by == "faces" else "存储"
