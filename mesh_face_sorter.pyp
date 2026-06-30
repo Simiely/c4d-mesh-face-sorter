@@ -273,7 +273,6 @@ class MeshSorterDialog(gui.GeDialog):
                         pass
                 doc.EndUndo()
                 c4d.EventAdd()
-                c4d.DrawViews(c4d.DRAWFLAGS_ONLY_ACTIVE_VIEW)
             except Exception as e:
                 print(f"[MeshFaceSorter] 孤立出错: {e}")
             self._do_refresh()
@@ -316,17 +315,14 @@ class MeshSorterDialog(gui.GeDialog):
 
 # ────────────── Command ──────────────
 class MeshSorterCommand(c4d.plugins.CommandData):
-    _dlg = None
 
     def Execute(self, doc):
-        self._dlg = MeshSorterDialog()
-        self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
+        # 用 subid=0，让 C4D 管理对话框生命周期，避免第二次打开崩溃
+        dlg = MeshSorterDialog()
+        dlg.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 420, 0)
         return True
 
     def RestoreLayout(self, sec_ref):
-        # 必须创建新对话框，不能复用旧 _dlg（已销毁的窗口导致崩溃）
-        self._dlg = MeshSorterDialog()
-        self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
         return True
 
 
