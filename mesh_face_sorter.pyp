@@ -316,10 +316,19 @@ class MeshSorterDialog(gui.GeDialog):
 # ────────────── Command ──────────────
 class MeshSorterCommand(c4d.plugins.CommandData):
 
+# ────────────── Command ──────────────
+class MeshSorterCommand(c4d.plugins.CommandData):
+    _dlg = None
+
     def Execute(self, doc):
-        # 用 subid=0，让 C4D 管理对话框生命周期，避免第二次打开崩溃
-        dlg = MeshSorterDialog()
-        dlg.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 420, 0)
+        # 模式：保存引用 + 检查 IsOpen + dialogid=0
+        # （用户确认过 test 版此模式不崩溃）
+        if self._dlg is None or not self._dlg.IsOpen():
+            self._dlg = MeshSorterDialog()
+            self._dlg.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 420)
+        else:
+            self._dlg.Close()
+            self._dlg = None
         return True
 
     def RestoreLayout(self, sec_ref):
