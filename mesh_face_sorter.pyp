@@ -236,9 +236,10 @@ class MeshSorterCommand(c4d.plugins.CommandData):
     """命令入口：打开 Mesh Face Sorter 面板"""
 
     def Execute(self, doc):
-        """每次点击菜单都创建新对话框，避免旧对象残留导致崩溃"""
+        """每次点击菜单都创建新对话框"""
         dialog = MeshSorterDialog()
-        dialog.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 400)
+        # 使用 0 作为子 ID，让 C4D 自动分配，避免重复 ID 冲突
+        dialog.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 400)
         return True
 
     def RestoreLayout(self, sec_ref):
