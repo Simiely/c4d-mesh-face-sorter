@@ -208,8 +208,8 @@ class MeshSorterDialog(gui.GeDialog):
                            name=f"  物体名称                         {sort_label}*",
                            borderstyle=c4d.BORDER_THIN_IN)
 
-        # 列表行（最多 500 个）
-        for i, item in enumerate(objs[:500]):
+        # 列表行（最多 100 个）
+        for i, item in enumerate(objs[:100]):
             name = item["name"]
             if len(name) > 26:
                 name = name[:24] + ".."
@@ -221,9 +221,9 @@ class MeshSorterDialog(gui.GeDialog):
             self.AddStaticText(4000 + i, c4d.BFH_SCALEFIT, 0, 0,
                                name=f"  {name:<26} {val_str:>8}")
 
-        if len(objs) > 500:
+        if len(objs) > 100:
             self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0,
-                               name=f"（仅显示前 500 个，共 {len(objs)} 个）")
+                               name=f"（仅显示前 100 个，共 {len(objs)} 个）")
 
         self.GroupEnd()
         self.LayoutChanged(self.GID_LIST_GROUP)
