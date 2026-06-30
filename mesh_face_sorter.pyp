@@ -191,8 +191,8 @@ class MeshSorterDialog(gui.GeDialog):
         count = 0
         for obj in _collect_all(doc):
             try:
-                if obj.GetBit(c4d.BIT_HIDDEN):
-                    obj.DelBit(c4d.BIT_HIDDEN)
+                if obj.GetBit(c4d.BIT_IGNOREDRAW):
+                    obj.DelBit(c4d.BIT_IGNOREDRAW)
                     count += 1
             except Exception:
                 pass
