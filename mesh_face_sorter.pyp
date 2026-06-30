@@ -71,7 +71,8 @@ class MeshSorterDialog(gui.GeDialog):
                 if current is None:
                     continue
                 try:
-                    if current.IsInstanceOf(c4d.Opolygon):
+                    # 检查是否是多边形物体（含参数化物体，它们有隐藏的多边形数据）
+                    if current.GetPolygonCount() > 0:
                         result.append(current.GetName())
                 except Exception:
                     pass
