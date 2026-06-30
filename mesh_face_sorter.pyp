@@ -74,11 +74,32 @@ class MeshSorterDialog(gui.GeDialog):
                 if current is None:
                     continue
                 try:
-                    # 收集所有物体（不过滤类型）
+                    # 获取面数：对参数化物体用 GetCache() 获取生成后的多边形数据
+                    faces = 0
+                    try:
+                        faces = current.GetPolygonCount()
+                    except Exception:
+                        pass
+                    if faces == 0 and not current.IsInstanceOf(c4d.Opolygon):
+                        # 参数化物体：尝试获取缓存（生成后的多边形对象）
+                        try:
+                            cache = current.GetCache()
+                            if cache:
+                                if cache.IsInstanceOf(c4d.Opolygon):
+                                    faces = cache.GetPolygonCount()
+                                else:
+                                    # 缓存可能是一个层级，遍历子级
+                                    try:
+                                        faces = cache.GetPolygonCount()
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+
                     result.append({
                         "name": current.GetName(),
                         "type": current.GetType(),
-                        "faces": current.GetPolygonCount() if hasattr(current, 'GetPolygonCount') else 0,
+                        "faces": faces,
                     })
                 except Exception:
                     pass
