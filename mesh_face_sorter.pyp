@@ -167,19 +167,28 @@ _SORT_LABELS = {
 # ──────────────────────────────────────────────
 # Helper: collect all scene objects recursively
 # ──────────────────────────────────────────────
-def _collect_all_objects(doc):
-    """递归收集场景中所有物体（含子级）"""
+def _collect_all_objects(doc, max_depth=100):
+    """递归收集场景中所有物体（含子级），加入深度保护"""
     result = []
-    def _walk(obj):
-        if obj is None:
+    visited = set()
+
+    def _walk(obj, depth):
+        if obj is None or depth > max_depth:
             return
+        # 避免重复访问（理论上不会，但防御性编程）
+        obj_id = obj.GetGUID()
+        if obj_id in visited:
+            return
+        visited.add(obj_id)
+
         result.append(obj)
         child = obj.GetDown()
         while child:
-            _walk(child)
+            _walk(child, depth + 1)
             child = child.GetNext()
+
     for obj in doc.GetObjects():
-        _walk(obj)
+        _walk(obj, 0)
     return result
 
 
@@ -263,8 +272,8 @@ def _scan_meshes(doc, with_progress=False):
             is_hidden = obj.GetBit(c4d.BIT_HIDDEN)
             is_selected = obj.GetBit(c4d.BIT_ACTIVE)
             stats.append({
-                "object": obj,
                 "name": obj.GetName(),
+                "guid": obj.GetGUID(),
                 "faces": poly_count,
                 "vertices": point_count,
                 "size": _estimate_mesh_size(obj),
@@ -495,14 +504,22 @@ class MeshSorterDialog(gui.GeDialog):
     # ── Timer ───────────────────────────────────
     def Timer(self, msg):
         """定时刷新面板状态和列表"""
+        # 如果对话框已关闭，停止定时器
+        if not self.IsOpen():
+            self.KillTimer()
+            return
+
         if _ScanStatus.is_scanning:
             self._update_status()
             self._update_progress()
             c4d.EventAdd()
         else:
             # 非扫描状态，定期刷新实时状态（选中、隐藏变化）
-            if _Cache.has_data() and self.doc is not None:
-                self._refresh_list(self.doc)
+            doc = self._get_active_doc()
+            if _Cache.has_data() and doc is not None:
+                # 如果 C4D 正在忙（渲染/导出等），跳过本次刷新
+                if c4d.IsMainThreadAndAppRunning():
+                    self._refresh_list(doc)
         self.SetTimer(1000)
 
     # ── Command Handler ─────────────────────────
@@ -806,7 +823,9 @@ class MeshSorterDialog(gui.GeDialog):
 
         try:
             entry = stats[row_index]
-            obj = entry["object"]
+            obj = doc.SearchObject(entry["name"])
+            if obj is None:
+                return
         except Exception:
             return
 
@@ -827,12 +846,13 @@ class MeshSorterDialog(gui.GeDialog):
             self._refresh_list(doc)
 
         elif action_type == OFFSET_BTN_ISOLATE:
-            # 孤立显示
+            # 孤立显示：根据名称查找目标物体
+            target_name = entry["name"]
             doc.StartUndo()
             for o in _collect_all_objects(doc):
                 if o.IsInstanceOf(c4d.Opolygon):
                     doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                    if o == obj:
+                    if o.GetName() == target_name:
                         o.DelBit(c4d.BIT_HIDDEN)
                     else:
                         o.SetBit(c4d.BIT_HIDDEN)
@@ -898,7 +918,9 @@ class MeshSorterDialog(gui.GeDialog):
 
         for idx, s in enumerate(display_stats):
             try:
-                obj = s["object"]
+                obj = doc.SearchObject(s["name"])
+                if obj is None:
+                    continue
                 is_selected = obj.GetBit(c4d.BIT_ACTIVE)
                 is_hidden = obj.GetBit(c4d.BIT_HIDDEN)
             except Exception:
