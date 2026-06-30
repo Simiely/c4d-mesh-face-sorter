@@ -233,8 +233,8 @@ class MeshSorterDialog(gui.GeDialog):
 
     def _handle_row(self, gid):
         idx = gid - 4000
-        action = idx % 3
-        row = idx // 3
+        action = idx % 2  # 0=选中, 1=孤立
+        row = idx // 2
         if row >= len(self._objects):
             return
         item = self._sorted_objects[row]
@@ -273,29 +273,6 @@ class MeshSorterDialog(gui.GeDialog):
             doc.EndUndo()
             c4d.EventAdd()
             self._do_refresh()
-        elif action == 2:  # 减面（直接减面，非破坏性 Tag 在 C4D 2024 Python 中不可用）
-            faces = _count_faces_recursive(obj)
-            if faces == 0:
-                print("[MeshFaceSorter] 物体没有多边形数据，无法减面")
-                return
-            try:
-                doc.StartUndo()
-                # 使用 c4d.utils.PolygonReduction 直接减面
-                pred = c4d.utils.PolygonReduction()
-                if pred:
-                    settings = c4d.BaseContainer()
-                    settings[c4d.POLYREDUXOBJECT_PRESERVE_3D_BOUNDARY] = True
-                    settings[c4d.POLYREDUXOBJECT_PRESERVE_UV_BOUNDARY] = True
-                    data = {"_op": obj, "_doc": doc, "_settings": settings, "_thread": None}
-                    if pred.PreProcess(data):
-                        pred.SetReductionStrengthLevel(0.5)  # 保留 50%
-                        obj.Message(c4d.MSG_UPDATE)
-                doc.AddUndo(c4d.UNDOTYPE_CHANGE, obj)
-                doc.EndUndo()
-                c4d.EventAdd()
-                print(f"[MeshFaceSorter] 已为 {obj.GetName()} 减面")
-            except Exception as e:
-                print(f"[MeshFaceSorter] 减面失败: {e}")
 
     def _refresh_list(self):
         objs = self._objects
@@ -310,21 +287,20 @@ class MeshSorterDialog(gui.GeDialog):
 
         sort_label = "面数" if self.sort_by == "faces" else "存储"
         self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0,
-                           name=f"  物体名称                    {sort_label}*   O   -",
+                           name=f"  物体名称                    {sort_label}*   O",
                            borderstyle=c4d.BORDER_THIN_IN)
 
         for i, item in enumerate(objs[:100]):
-            base = 4000 + i * 3
+            base = 4000 + i * 2
             name = item["name"]
             if len(name) > 22:
                 name = name[:20] + ".."
             val = item["faces"] if self.sort_by == "faces" else item["size"]
             val_str = _fmt_num(val) if self.sort_by == "faces" else _fmt_size(val)
             display = f"  {name:<22} {val_str:>6}"
-            self.GroupBegin(base, c4d.BFH_SCALEFIT, 3, 0, "")
-            self.AddButton(base,     c4d.BFH_SCALEFIT, 270, 16, name=display)
+            self.GroupBegin(base, c4d.BFH_SCALEFIT, 2, 0, "")
+            self.AddButton(base,     c4d.BFH_SCALEFIT, 290, 16, name=display)
             self.AddButton(base + 1, c4d.BFH_SCALEFIT, 20, 16, name="O")
-            self.AddButton(base + 2, c4d.BFH_SCALEFIT, 20, 16, name="-")
             self.GroupEnd()
 
         if len(objs) > 100:
@@ -336,18 +312,16 @@ class MeshSorterDialog(gui.GeDialog):
 
 # ────────────── Command ──────────────
 class MeshSorterCommand(c4d.plugins.CommandData):
-    _dlg = None  # 保持引用防止 GC
+    _dlg = None
 
     def Execute(self, doc):
-        # 每次点击菜单都创建新对话框
-        # 不检查旧对话框 IsOpen()，避免访问已销毁对象导致崩溃
         self._dlg = MeshSorterDialog()
         self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
         return True
 
     def RestoreLayout(self, sec_ref):
-        if self._dlg is None:
-            self._dlg = MeshSorterDialog()
+        # 必须创建新对话框，不能复用旧 _dlg（已销毁的窗口导致崩溃）
+        self._dlg = MeshSorterDialog()
         self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
         return True
 
