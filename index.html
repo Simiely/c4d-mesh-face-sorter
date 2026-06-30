@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>C4D Mesh Face Sorter · Cinema 4D 插件</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0b0d11;
+    --surface: #12141a;
+    --surface2: #1a1d25;
+    --border: #232731;
+    --text: #e4e6ed;
+    --text2: #8a8f9d;
+    --accent: #6c8cff;
+    --accent2: #4a6ae0;
+    --green: #34d399;
+    --orange: #fbbf24;
+    --red: #f87171;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  ::selection { background: var(--accent); color: #fff; }
+
+  /* ── Hero ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(108,140,255,.08) 0%, transparent 70%);
+    top: -200px;
+    right: -200px;
+    pointer-events: none;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(52,211,153,.06) 0%, transparent 70%);
+    bottom: -200px;
+    left: -200px;
+    pointer-events: none;
+  }
+
+  .hero-badge {
+    display: inline-block;
+    padding: .35rem 1rem;
+    border-radius: 100px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    font-size: .8rem;
+    color: var(--text2);
+    margin-bottom: 1.5rem;
+    letter-spacing: .3px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.8rem, 8vw, 5rem);
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1.1;
+    margin-bottom: .5rem;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--accent), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero .tagline {
+    font-size: clamp(1rem, 2.5vw, 1.3rem);
+    color: var(--text2);
+    max-width: 560px;
+    margin: .8rem auto 2rem;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .75rem 1.8rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: .95rem;
+    text-decoration: none;
+    transition: all .25s;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--accent2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(108,140,255,.3);
+  }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  .hero-scroll {
+    position: absolute;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: bounce 2s infinite;
+    color: var(--text2);
+    font-size: .8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .4rem;
+  }
+
+  .hero-scroll svg { width: 20px; height: 20px; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(8px); }
+  }
+
+  /* ── Sections ── */
+  section { padding: 5rem 1.5rem; }
+
+  .section-inner {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--accent);
+    margin-bottom: .5rem;
+  }
+
+  .section-title {
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -1px;
+    margin-bottom: .5rem;
+  }
+
+  .section-title em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--accent), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .section-desc {
+    color: var(--text2);
+    font-size: 1.05rem;
+    margin-bottom: 3rem;
+    max-width: 600px;
+  }
+
+  /* ── Features Grid ── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+  }
+
+  .feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    transition: all .25s;
+  }
+
+  .feature-card:hover {
+    border-color: rgba(108,140,255,.3);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+  }
+
+  .feature-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .feature-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: .4rem;
+  }
+
+  .feature-card p {
+    font-size: .85rem;
+    color: var(--text2);
+    line-height: 1.5;
+  }
+
+  /* ── How it works ── */
+  .steps { display: flex; flex-direction: column; gap: .75rem; }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+    transition: all .2s;
+  }
+
+  .step:hover { border-color: rgba(108,140,255,.2); }
+
+  .step-num {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: .9rem;
+  }
+
+  .step-content h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: .2rem;
+  }
+
+  .step-content p {
+    font-size: .85rem;
+    color: var(--text2);
+  }
+
+  /* ── Architecture / Tiers ── */
+  .tier-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .tier-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.5rem;
+  }
+
+  .tier-card h3 {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+  }
+
+  .tier-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .8rem;
+    padding: .6rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tier-item:last-child { border-bottom: none; }
+
+  .tier-tag {
+    flex-shrink: 0;
+    padding: .1rem .6rem;
+    border-radius: 6px;
+    font-size: .7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .tier-tag.pri { background: rgba(108,140,255,.15); color: var(--accent); }
+  .tier-tag.sec { background: rgba(251,191,36,.15); color: var(--orange); }
+  .tier-tag.fallback { background: rgba(248,113,113,.15); color: var(--red); }
+
+  .tier-desc {
+    font-size: .82rem;
+    color: var(--text2);
+  }
+
+  .tier-desc strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  /* ── Specs ── */
+  .specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+
+  .spec-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem 1.4rem;
+  }
+
+  .spec-label {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text2);
+    margin-bottom: .3rem;
+  }
+
+  .spec-value {
+    font-size: .95rem;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── Footer / CTA ── */
+  .cta-section {
+    text-align: center;
+    padding: 5rem 1.5rem;
+    position: relative;
+  }
+
+  .cta-section::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    top: 0;
+    left: 0;
+  }
+
+  .cta-section h2 {
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-weight: 700;
+    margin-bottom: .5rem;
+  }
+
+  .cta-section h2 em {
+    font-style: normal;
+    color: var(--accent);
+  }
+
+  .cta-section p {
+    color: var(--text2);
+    margin-bottom: 2rem;
+  }
+
+  footer {
+    text-align: center;
+    padding: 2rem 1.5rem;
+    font-size: .8rem;
+    color: var(--text2);
+    border-top: 1px solid var(--border);
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    section { padding: 3rem 1rem; }
+    .hero { min-height: 90vh; }
+    .features-grid, .tier-grid, .specs-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ── Fade-in ── */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeUp .6s ease forwards;
+  }
+  .fade-in:nth-child(2) { animation-delay: .1s; }
+  .fade-in:nth-child(3) { animation-delay: .2s; }
+
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ Hero ══ -->
+<section class="hero">
+  <span class="hero-badge">Cinema 4D Plugin · MIT License</span>
+  <h1>C4D <em>Mesh Face Sorter</em></h1>
+  <p class="tagline">
+    按面数 / 存储大小排列场景中的所有多边形物体。<br>
+    排序、孤立、删除、导出 —— 都在一个面板上完成。
+  </p>
+  <div class="hero-actions">
+    <a href="#features" class="btn btn-primary">浏览功能</a>
+    <a href="https://github.com/Simiely/c4d-mesh-face-sorter" class="btn btn-secondary" target="_blank">查看源码 ↗</a>
+  </div>
+  <div class="hero-scroll">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    <span>向下滚动</span>
+  </div>
+</section>
+
+<!-- ══ Features ══ -->
+<section id="features">
+  <div class="section-inner">
+    <div class="section-label">01 / Features</div>
+    <h2 class="section-title">六个功能，<em>一个面板</em>。</h2>
+    <p class="section-desc">打开面板→点击刷新→搞定。所有操作集中在一个对话框，不多不少。</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔄</div>
+        <h3>排序</h3>
+        <p>按面数或存储大小排序，点按切换升降序。快速定位场景中最大的网格体。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">👁</div>
+        <h3>孤立显示</h3>
+        <p>点击 O 按钮，只显示选中物体，其余隐藏。专注编辑单个物体的绝佳方式。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">▶</div>
+        <h3>选中高亮</h3>
+        <p>列表中选中物体加 ▶ 标记，一目了然。点击行即可在场景中选中对应物体。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🗑</div>
+        <h3>删除空物体</h3>
+        <p>一键清理面数为 0 的空网格体。安全删除——有子级的不删，绝不误伤。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📊</div>
+        <h3>导出报表</h3>
+        <p>导出 Markdown 格式的场景报告，含面数 / 存储统计。方便分享与归档。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🌐</div>
+        <h3>显示全部</h3>
+        <p>一键恢复所有隐藏物体。孤立显示后的完美搭档，快速回到完整场景。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ How it works ══ -->
+<section>
+  <div class="section-inner">
+    <div class="section-label">02 / Usage</div>
+    <h2 class="section-title">三步上手，<em>即刻高效</em>。</h2>
+    <p class="section-desc">安装即用，无需配置。界面直观，操作路径短到极致。</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-content">
+          <h3>安装插件</h3>
+          <p>将 <code>mesh_face_sorter.pyp</code> 放入 C4D 插件目录，创建 <code>res/c4d_symbols.h</code>，重启 C4D。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-content">
+          <h3>打开面板</h3>
+          <p>扩展 → Mesh Face Sorter，点击「刷新」扫描整个场景。所有多边形物体即刻列出。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-content">
+          <h3>排序与操作</h3>
+          <p>按面数或存储大小排列，点击行选中物体，点 O 孤立编辑，一键导出报表或删除空物体。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Architecture ══ -->
+<section>
+  <div class="section-inner">
+    <div class="section-label">03 / Architecture</div>
+    <h2 class="section-title">双层架构，<em>稳固可靠</em>。</h2>
+    <p class="section-desc">数据层与展示层分离，排序算法与对话框逻辑清晰解耦。</p>
+    <div class="tier-grid">
+      <div class="tier-card">
+        <h3>排序引擎</h3>
+        <div class="tier-item">
+          <span class="tier-tag pri">面数</span>
+          <div class="tier-desc">递归统计 <strong>GetPolygonCount</strong>，参数化物体通过缓存获取</div>
+        </div>
+        <div class="tier-item">
+          <span class="tier-tag sec">存储</span>
+          <div class="tier-desc">按 <strong>点 × 24 + 面 × 16</strong> 估算内存占用</div>
+        </div>
+        <div class="tier-item">
+          <span class="tier-tag fallback">缓存</span>
+          <div class="tier-desc">参数化物体自动降级到 <strong>GetCache</strong> 递归统计</div>
+        </div>
+      </div>
+      <div class="tier-card">
+        <h3>对话框系统</h3>
+        <div class="tier-item">
+          <span class="tier-tag pri">引用持有</span>
+          <div class="tier-desc"><strong>CommandData</strong> 保持对话框引用，防止 GC 回收</div>
+        </div>
+        <div class="tier-item">
+          <span class="tier-tag sec">RestoreLayout</span>
+          <div class="tier-desc">直接返回 <strong>True</strong>，避免二次打开崩溃</div>
+        </div>
+        <div class="tier-item">
+          <span class="tier-tag fallback">异常保护</span>
+          <div class="tier-desc">所有回调包裹 <strong>try/except</strong>，静默容错</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Specs ══ -->
+<section>
+  <div class="section-inner">
+    <div class="section-label">04 / Specs</div>
+    <h2 class="section-title">技术<em>规格</em>。</h2>
+    <p class="section-desc">轻量、兼容、纯 Python 实现。</p>
+    <div class="specs-grid">
+      <div class="spec-item">
+        <div class="spec-label">Version</div>
+        <div class="spec-value">1.0.0</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Platform</div>
+        <div class="spec-value">C4D 2023–2026</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Stack</div>
+        <div class="spec-value">Python · GeDialog</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Plugin ID</div>
+        <div class="spec-value">1052328</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">Language</div>
+        <div class="spec-value">Python 3</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-label">License</div>
+        <div class="spec-value">MIT</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ CTA ══ -->
+<section class="cta-section">
+  <div class="section-inner">
+    <h2>让场景管理 <em>一目了然</em>。</h2>
+    <p>免费开源 · 即刻使用</p>
+    <div class="hero-actions" style="justify-content:center;">
+      <a href="https://github.com/Simiely/c4d-mesh-face-sorter/releases" class="btn btn-primary" target="_blank">下载插件 ↓</a>
+      <a href="https://github.com/Simiely/c4d-mesh-face-sorter" class="btn btn-secondary" target="_blank">查看源码 ↗</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p><a href="https://github.com/Simiely/c4d-mesh-face-sorter">C4D Mesh Face Sorter</a> · MIT License · Made with ❤️ for the C4D community</p>
+</footer>
+
+</body>
+</html>
