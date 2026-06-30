@@ -28,15 +28,18 @@ class MeshSorterDialog(gui.GeDialog):
         super().__init__()
 
     def CreateLayout(self):
-        """构建对话框布局 — MVP: 只显示标题和提示"""
+        """构建对话框布局"""
         self.SetTitle("Mesh Face Sorter")
 
         # 状态提示
         self.AddStaticText(1000, c4d.BFH_SCALEFIT, 0, 0,
-                           name="Mesh Face Sorter - MVP",
+                           name="Mesh Face Sorter",
                            borderstyle=c4d.BORDER_NONE)
         self.AddStaticText(1001, c4d.BFH_SCALEFIT, 0, 0,
                            name="点击「刷新列表」扫描场景",
+                           borderstyle=c4d.BORDER_NONE)
+        self.AddStaticText(1002, c4d.BFH_SCALEFIT, 0, 0,
+                           name="",
                            borderstyle=c4d.BORDER_NONE)
 
         # 刷新按钮
@@ -53,23 +56,52 @@ class MeshSorterDialog(gui.GeDialog):
         return True
 
     def _do_refresh(self):
-        """扫描场景中的网格体（MVP: 只打印到控制台）"""
+        """扫描场景中的网格体（递归遍历所有层级）"""
         doc = c4d.documents.GetActiveDocument()
         if doc is None:
             print("[MeshFaceSorter] 没有活动文档")
             return
 
-        count = 0
+        # 递归遍历所有物体（含子级）
+        def _collect_polygons(obj):
+            result = []
+            stack = [obj]
+            while stack:
+                current = stack.pop()
+                if current is None:
+                    continue
+                try:
+                    if current.IsInstanceOf(c4d.Opolygon):
+                        result.append(current.GetName())
+                except Exception:
+                    pass
+                # 添加子级到栈
+                child = current.GetDown()
+                while child:
+                    stack.append(child)
+                    child = child.GetNext()
+            return result
+
+        all_polygons = []
         try:
             for obj in doc.GetObjects():
-                if obj.IsInstanceOf(c4d.Opolygon):
-                    count += 1
+                all_polygons.extend(_collect_polygons(obj))
         except Exception as e:
             print(f"[MeshFaceSorter] 扫描出错: {e}")
             return
 
+        count = len(all_polygons)
         print(f"[MeshFaceSorter] 扫描完成：{count} 个多边形物体")
+        print(f"[MeshFaceSorter] 物体列表：{all_polygons}")
+
+        # 在面板里显示结果
         self.SetString(1001, f"扫描完成：{count} 个多边形物体")
+        
+        # 显示物体名称（最多 10 个）
+        names = " | ".join(all_polygons[:10])
+        if count > 10:
+            names += f" ... (共 {count} 个)"
+        self.SetString(1002, names)
 
 
 # ──────────────────────────────────────────────
