@@ -328,15 +328,13 @@ class MeshSorterDialog(gui.GeDialog):
 
 # ────────────── Command ──────────────
 class MeshSorterCommand(c4d.plugins.CommandData):
-    _dlg = None  # 保持引用，防止垃圾回收
+    _dlg = None  # 保持引用防止 GC
 
     def Execute(self, doc):
-        if self._dlg is None or not self._dlg.IsOpen():
-            self._dlg = MeshSorterDialog()
-            self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
-        else:
-            self._dlg.Close()
-            self._dlg = None
+        # 每次点击菜单都创建新对话框
+        # 不检查旧对话框 IsOpen()，避免访问已销毁对象导致崩溃
+        self._dlg = MeshSorterDialog()
+        self._dlg.Open(c4d.DLG_TYPE_ASYNC, PLUGIN_ID, -1, -1, 420, 420)
         return True
 
     def RestoreLayout(self, sec_ref):
