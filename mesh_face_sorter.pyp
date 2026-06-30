@@ -260,18 +260,22 @@ class MeshSorterDialog(gui.GeDialog):
             c4d.EventAdd()
             self._refresh_list()
         elif action == 1:  # 孤立
-            doc.StartUndo()
-            for o in _collect_all(doc):
-                try:
-                    doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                    if o == obj:
-                        o.Hide(False)
-                    else:
-                        o.Hide(True)
-                except Exception:
-                    pass
-            doc.EndUndo()
-            c4d.EventAdd()
+            try:
+                doc.StartUndo()
+                for o in _collect_all(doc):
+                    try:
+                        doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
+                        if o == obj:
+                            o.DelBit(c4d.BIT_IGNOREDRAW)
+                        else:
+                            o.SetBit(c4d.BIT_IGNOREDRAW)
+                    except Exception:
+                        pass
+                doc.EndUndo()
+                c4d.EventAdd()
+                c4d.DrawViews(c4d.DRAWFLAGS_ONLY_ACTIVE_VIEW)
+            except Exception as e:
+                print(f"[MeshFaceSorter] 孤立出错: {e}")
             self._do_refresh()
 
     def _refresh_list(self):
