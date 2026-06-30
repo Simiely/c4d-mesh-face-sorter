@@ -1,53 +1,242 @@
-"""C4D Mesh Face Sorter — 极简排查版
+"""C4D Mesh Face Sorter
 
-逐个增加控件定位布局问题。
-Compatible: C4D 2023+
+Compatible: C4D 2023+ (2024/2025/2026)
+License: MIT
 """
 
 import c4d
 from c4d import gui
 
+# ──────────────────────────────
+# Plugin metadata
+# ──────────────────────────────
 PLUGIN_ID = 1052328
+PLUGIN_NAME = "Mesh Face Sorter"
+PLUGIN_HELP = "按面数/存储大小排列网格体"
 
-class MinimalDialog(gui.GeDialog):
+
+# ──────────────────────────────
+# Helper: count faces recursively
+# ──────────────────────────────
+def _count_faces_recursive(obj, max_depth=10):
+    if obj is None or max_depth <= 0:
+        return 0
+    total = 0
+    try:
+        if obj.IsInstanceOf(c4d.Opolygon):
+            total += obj.GetPolygonCount()
+        else:
+            cache = obj.GetCache()
+            if cache:
+                total += _count_faces_recursive(cache, max_depth - 1)
+            child = obj.GetDown()
+            while child:
+                total += _count_faces_recursive(child, max_depth - 1)
+                child = child.GetNext()
+    except Exception:
+        pass
+    return total
+
+
+# ──────────────────────────────
+# Helper: estimate memory size
+# ──────────────────────────────
+def _estimate_size(obj):
+    try:
+        pts = obj.GetPointCount()
+        polys = obj.GetPolygonCount()
+        return pts * 24 + polys * 16
+    except Exception:
+        return 0
+
+
+# ──────────────────────────────
+# Helper: format numbers
+# ──────────────────────────────
+def _fmt_num(n):
+    if n >= 1000000:
+        return f"{n/1000000:.1f}M"
+    if n >= 1000:
+        return f"{n/1000:.1f}K"
+    return str(n)
+
+
+# ──────────────────────────────
+# Dialog — Main UI
+# ──────────────────────────────
+class MeshSorterDialog(gui.GeDialog):
+
+    GID_STATUS = 1001
+    GID_STAT_COUNT = 1002
+    GID_SORT_COMBO = 1010
+    GID_SORT_TOGGLE = 1011
+    GID_BTN_REFRESH = 2000
+    GID_LIST_SCROLL = 3000
+    GID_LIST_GROUP = 3001
+
+    def __init__(self):
+        super().__init__()
+        self._objects = []
+        self.sort_by = "faces"
+        self.descending = True
+
     def CreateLayout(self):
-        self.SetTitle("Mesh Face Sorter Debug")
+        self.SetTitle("Mesh Face Sorter")
 
-        # 控件 1：文本
-        self.AddStaticText(1001, c4d.BFH_SCALEFIT, 0, 0,
-                               name="Step 1: StaticText",
+        # 状态区
+        self.AddStaticText(self.GID_STATUS, c4d.BFH_SCALEFIT, 0, 0,
+                               name="点击「刷新列表」扫描场景",
                                borderstyle=c4d.BORDER_NONE)
-        # 控件 2：Group 内的按钮
-        self.GroupBegin(1010, c4d.BFH_SCALEFIT, 2, 0, name="")
-        self.AddButton(2001, c4d.BFH_SCALEFIT, 100, 20, name="按钮 A")
-        self.AddButton(2002, c4d.BFH_SCALEFIT, 100, 20, name="按钮 B")
+        self.AddStaticText(self.GID_STAT_COUNT, c4d.BFH_SCALEFIT, 0, 0,
+                               name="",
+                               borderstyle=c4d.BORDER_NONE)
+
+        # 【关键修复】GroupBegin 用 title= 参数，不能用 name=
+        # 排序 + 刷新按钮（一行）
+        self.GroupBegin(1020, c4d.BFH_SCALEFIT, 3, 0, "操作：")
+        self.AddComboBox(self.GID_SORT_COMBO, c4d.BFH_SCALEFIT, 120, 12)
+        self.AddChild(self.GID_SORT_COMBO, 0, "面数")
+        self.AddChild(self.GID_SORT_COMBO, 1, "存储大小")
+        self.SetInt32(self.GID_SORT_COMBO, 0)
+        self.AddButton(self.GID_SORT_TOGGLE, c4d.BFH_SCALEFIT, 30, 20, name="↓↑")
+        self.AddButton(self.GID_BTN_REFRESH, c4d.BFH_SCALEFIT, 120, 20, name="刷新列表")
         self.GroupEnd()
 
-        # 控件 3：根级按钮
-        self.AddButton(2003, c4d.BFH_SCALEFIT, 120, 20, name="刷新列表")
-
-        # 控件 4：滚动组
-        self.ScrollGroupBegin(3000, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
-                              c4d.SCROLLGROUP_VERT, 380, 100)
-        self.AddStaticText(3001, c4d.BFH_SCALEFIT, 0, 0, name="滚动区域内部")
+        # 列表区（滚动组）
+        self.ScrollGroupBegin(self.GID_LIST_SCROLL,
+                              c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT,
+                              c4d.SCROLLGROUP_VERT, 380, 200)
+        self.GroupBegin(self.GID_LIST_GROUP,
+                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
+        self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0, name="（点击「刷新列表」开始扫描）")
+        self.GroupEnd()
         self.ScrollGroupEnd()
 
         return True
 
     def Command(self, gid, msg):
-        print(f"[MeshFaceSorter] 点击了控件 {gid}")
+        if gid == self.GID_SORT_COMBO:
+            idx = self.GetInt32(self.GID_SORT_COMBO)
+            self.sort_by = "faces" if idx == 0 else "size"
+            self._refresh_list()
+
+        elif gid == self.GID_SORT_TOGGLE:
+            self.descending = not self.descending
+            label = "↓" if self.descending else "↑"
+            self.SetString(self.GID_SORT_TOGGLE, label)
+            self._refresh_list()
+
+        elif gid == self.GID_BTN_REFRESH:
+            self._do_refresh()
+
         return True
 
-class MinimalCommand(c4d.plugins.CommandData):
+    def _do_refresh(self):
+        doc = c4d.documents.GetActiveDocument()
+        if doc is None:
+            print("[MeshFaceSorter] 没有活动文档")
+            return
+
+        def _scan(obj):
+            result = []
+            stack = [obj]
+            while stack:
+                current = stack.pop()
+                if current is None:
+                    continue
+                try:
+                    faces = _count_faces_recursive(current)
+                    result.append({
+                        "name": current.GetName(),
+                        "faces": faces,
+                        "size": _estimate_size(current),
+                    })
+                except Exception:
+                    pass
+                child = current.GetDown()
+                while child:
+                    stack.append(child)
+                    child = child.GetNext()
+            return result
+
+        all_objects = []
+        try:
+            for obj in doc.GetObjects():
+                all_objects.extend(_scan(obj))
+        except Exception:
+            return
+
+        self._objects = all_objects
+        count = len(all_objects)
+        self.SetString(self.GID_STATUS, f"扫描完成：{count} 个物体")
+        total_faces = sum(o["faces"] for o in all_objects)
+        self.SetString(self.GID_STAT_COUNT,
+                       f"网格体：{count}    总面数：{_fmt_num(total_faces)}")
+        self._refresh_list()
+
+    def _refresh_list(self):
+        objs = self._objects
+        if self.sort_by == "faces":
+            objs = sorted(objs, key=lambda x: x["faces"], reverse=self.descending)
+        else:
+            objs = sorted(objs, key=lambda x: x["size"], reverse=self.descending)
+
+        self.LayoutFlushGroup(self.GID_LIST_GROUP)
+        self.GroupBegin(self.GID_LIST_GROUP,
+                        c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
+
+        sort_label = "面数" if self.sort_by == "faces" else "存储"
+        self.AddStaticText(3999, c4d.BFH_SCALEFIT, 0, 0,
+                           name=f"  物体名称                         {sort_label}*",
+                           borderstyle=c4d.BORDER_THIN_IN)
+
+        for i, item in enumerate(objs[:100]):
+            name = item["name"]
+            if len(name) > 26:
+                name = name[:24] + ".."
+            val = item["faces"] if self.sort_by == "faces" else item["size"]
+            if self.sort_by == "size":
+                val_str = f"{val//1024}KB" if val >= 1024 else f"{val}B"
+            else:
+                val_str = _fmt_num(val)
+            self.AddStaticText(4000 + i, c4d.BFH_SCALEFIT, 0, 0,
+                               name=f"  {name:<26} {val_str:>8}")
+
+        if len(objs) > 100:
+            self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0,
+                               name=f"（仅显示前 100 个，共 {len(objs)} 个）")
+
+        self.GroupEnd()
+        self.LayoutChanged(self.GID_LIST_GROUP)
+
+
+# ──────────────────────────────
+# Command — Entry point
+# ──────────────────────────────
+class MeshSorterCommand(c4d.plugins.CommandData):
     def Execute(self, doc):
-        dlg = MinimalDialog()
-        dlg.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 300)
+        dialog = MeshSorterDialog()
+        dialog.Open(c4d.DLG_TYPE_ASYNC, 0, -1, -1, 420, 400)
         return True
 
+    def RestoreLayout(self, sec_ref):
+        return True
+
+
+# ──────────────────────────────
+# Plugin registration
+# ──────────────────────────────
 def main():
-    c4d.plugins.RegisterCommandPlugin(
-        PLUGIN_ID, "MFS Debug", 0, None, "调试版", MinimalCommand(),
-    )
-    print("[MeshFaceSorter] 调试版已加载")
+    try:
+        ok = c4d.plugins.RegisterCommandPlugin(
+            PLUGIN_ID, PLUGIN_NAME, 0, None, PLUGIN_HELP, MeshSorterCommand(),
+        )
+        if ok:
+            print(f"[MeshFaceSorter] 插件已加载，ID: {PLUGIN_ID}")
+        else:
+            print(f"[MeshFaceSorter] 注册失败")
+    except Exception as e:
+        print(f"[MeshFaceSorter] 加载异常：{e}")
+
 
 main()
