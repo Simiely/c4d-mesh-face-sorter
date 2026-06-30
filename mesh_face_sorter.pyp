@@ -38,12 +38,13 @@ class MeshSorterDialog(gui.GeDialog):
         self.AddStaticText(1001, c4d.BFH_SCALEFIT, 0, 0,
                            name="点击「刷新列表」扫描场景",
                            borderstyle=c4d.BORDER_NONE)
-        self.AddStaticText(1002, c4d.BFH_SCALEFIT, 0, 0,
-                           name="",
-                           borderstyle=c4d.BORDER_NONE)
-
+        
         # 刷新按钮
         self.AddButton(2000, c4d.BFH_SCALEFIT, 120, 20, name="刷新列表")
+
+        # 物体名称列表（多行文本框）
+        self.AddMultiLineEditText(1002, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 
+                                  400, 150, c4d.DR_MULTILINE_MONOSPACE)
 
         return True
 
@@ -98,11 +99,11 @@ class MeshSorterDialog(gui.GeDialog):
         # 在面板里显示结果
         self.SetString(1001, f"扫描完成：{count} 个多边形物体")
         
-        # 显示物体名称（最多 10 个）
-        names = " | ".join(all_polygons[:10])
-        if count > 10:
-            names += f" ... (共 {count} 个)"
-        self.SetString(1002, names)
+        # 显示物体名称列表（多行文本框）
+        names_text = "\n".join(all_polygons[:50])  # 最多显示 50 个
+        if count > 50:
+            names_text += f"\n... (共 {count} 个，仅显示前 50 个)"
+        self.SetText(1002, names_text)
 
 
 # ──────────────────────────────────────────────
