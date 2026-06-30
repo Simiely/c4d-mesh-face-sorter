@@ -265,19 +265,17 @@ class MeshSorterDialog(gui.GeDialog):
                 try:
                     doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
                     if o == obj:
-                        o.DelBit(c4d.BIT_HIDDEN)
+                        o.Hide(False)
                     else:
-                        o.SetBit(c4d.BIT_HIDDEN)
+                        o.Hide(True)
                 except Exception:
                     pass
             doc.EndUndo()
             c4d.EventAdd()
             self._do_refresh()
         elif action == 2:  # 减面 Tag
-            try:
-                if not obj.GetPolygonCount():
-                    return
-            except Exception:
+            faces = _count_faces_recursive(obj)
+            if faces == 0:
                 return
             if obj.GetTag(c4d.Tpolyredux):
                 return
