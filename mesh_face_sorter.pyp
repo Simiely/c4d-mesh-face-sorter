@@ -89,6 +89,7 @@ class MeshSorterDialog(gui.GeDialog):
     def __init__(self):
         super().__init__()
         self._objects = []
+        self._sorted_objects = []  # 排序后的列表，用于行点击索引
         self.sort_by = "faces"
         self.descending = True
 
@@ -236,7 +237,7 @@ class MeshSorterDialog(gui.GeDialog):
         row = idx // 3
         if row >= len(self._objects):
             return
-        item = self._objects[row]
+        item = self._sorted_objects[row]
         doc = c4d.documents.GetActiveDocument()
         if doc is None:
             return
@@ -296,6 +297,7 @@ class MeshSorterDialog(gui.GeDialog):
             objs = sorted(objs, key=lambda x: x["faces"], reverse=self.descending)
         else:
             objs = sorted(objs, key=lambda x: x["size"], reverse=self.descending)
+        self._sorted_objects = objs  # 保存排序后的列表，用于行点击索引
 
         self.LayoutFlushGroup(3001)
         self.GroupBegin(3001, c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
