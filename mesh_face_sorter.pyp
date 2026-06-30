@@ -19,6 +19,35 @@ PLUGIN_HELP = "按面数/存储大小排列网格体（MVP 版本）"
 
 
 # ──────────────────────────────────────
+# Helper: count faces recursively
+# ──────────────────────────────────────
+def _count_faces_recursive(obj, max_depth=10):
+    """递归计算物体的面数，含缓存（对参数化物体如人形素体也有效）"""
+    if obj is None or max_depth <= 0:
+        return 0
+
+    total = 0
+    try:
+        # 如果是多边形物体，直接获取面数
+        if obj.IsInstanceOf(c4d.Opolygon):
+            total += obj.GetPolygonCount()
+        else:
+            # 尝试从缓存获取（参数化物体的生成结果）
+            cache = obj.GetCache()
+            if cache:
+                # 递归统计缓存中的面数
+                total += _count_faces_recursive(cache, max_depth - 1)
+            # 某些物体的多边形在子级中
+            child = obj.GetDown()
+            while child:
+                total += _count_faces_recursive(child, max_depth - 1)
+                child = child.GetNext()
+    except Exception:
+        pass
+    return total
+
+
+# ──────────────────────────────────────
 # Dialog — Main UI
 # ──────────────────────────────────────
 class MeshSorterDialog(gui.GeDialog):
@@ -74,27 +103,8 @@ class MeshSorterDialog(gui.GeDialog):
                 if current is None:
                     continue
                 try:
-                    # 获取面数：对参数化物体用 GetCache() 获取生成后的多边形数据
-                    faces = 0
-                    try:
-                        faces = current.GetPolygonCount()
-                    except Exception:
-                        pass
-                    if faces == 0 and not current.IsInstanceOf(c4d.Opolygon):
-                        # 参数化物体：尝试获取缓存（生成后的多边形对象）
-                        try:
-                            cache = current.GetCache()
-                            if cache:
-                                if cache.IsInstanceOf(c4d.Opolygon):
-                                    faces = cache.GetPolygonCount()
-                                else:
-                                    # 缓存可能是一个层级，遍历子级
-                                    try:
-                                        faces = cache.GetPolygonCount()
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
+                    # 获取面数：递归检查物体及其缓存的所有多边形
+                    faces = _count_faces_recursive(current)
 
                     result.append({
                         "name": current.GetName(),
