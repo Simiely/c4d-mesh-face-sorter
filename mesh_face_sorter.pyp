@@ -122,7 +122,7 @@ class MeshSorterDialog(gui.GeDialog):
                         c4d.BFH_SCALEFIT | c4d.BFV_SCALEFIT, 1, 0)
         self.AddStaticText(0, c4d.BFH_SCALEFIT, 0, 0, name="（点击「刷新」开始扫描）")
         self.GroupEnd()
-        self.ScrollGroupEnd()
+        self.GroupEnd()  # 结束 ScrollGroup
 
         return True
 
