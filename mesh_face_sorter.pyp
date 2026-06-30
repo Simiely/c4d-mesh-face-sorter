@@ -303,6 +303,10 @@ class MeshSorterDialog(gui.GeDialog):
                             o.SetBit(c4d.BIT_IGNOREDRAW)
                     except Exception:
                         pass
+                # 选中孤立对象
+                doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, obj)
+                obj.SetBit(c4d.BIT_ACTIVE)
+                doc.SetActiveObject(obj)
                 doc.EndUndo()
                 c4d.EventAdd()
             except Exception as e:
