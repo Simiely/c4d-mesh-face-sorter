@@ -112,9 +112,10 @@ class MeshSorterDialog(gui.GeDialog):
         self.GroupEnd()
 
         # 按钮区
-        self.GroupBegin(1020, c4d.BFH_SCALEFIT, 2, 0, "")
+        self.GroupBegin(1020, c4d.BFH_SCALEFIT, 3, 0, "")
         self.AddButton(1021, c4d.BFH_SCALEFIT, 120, 20, name="显示全部")
         self.AddButton(1022, c4d.BFH_SCALEFIT, 120, 20, name="导出报表")
+        self.AddButton(1023, c4d.BFH_SCALEFIT, 120, 20, name="删除空物体")
         self.GroupEnd()
 
         # 列表区
@@ -142,6 +143,8 @@ class MeshSorterDialog(gui.GeDialog):
             self._do_show_all()
         elif gid == 1022:  # 导出报表
             self._do_export()
+        elif gid == 1023:  # 删除空物体
+            self._do_delete_empty()
         elif gid >= 4000:  # 列表行按钮
             self._handle_row(gid)
         return True
@@ -199,6 +202,35 @@ class MeshSorterDialog(gui.GeDialog):
         c4d.EventAdd()
         if count > 0:
             self._do_refresh()
+
+    def _do_delete_empty(self):
+        """删除面数为 0 且没有子级的空物体"""
+        doc = c4d.documents.GetActiveDocument()
+        if doc is None:
+            return
+        empty = []
+        for obj in _collect_all(doc):
+            try:
+                if obj.GetDown() is not None:
+                    continue  # 有子级，不删
+                if obj.GetPolygonCount() == 0 and obj.IsInstanceOf(c4d.Opolygon):
+                    empty.append(obj)
+            except Exception:
+                pass
+        if not empty:
+            gui.MessageDialog("没有可删除的空物体。")
+            return
+        ok = gui.QuestionDialog(f"找到 {len(empty)} 个面数为 0 的空物体，确定删除？")
+        if not ok:
+            return
+        doc.StartUndo()
+        for obj in empty:
+            doc.AddUndo(c4d.UNDOTYPE_DELETE, obj)
+            obj.Remove()
+        doc.EndUndo()
+        c4d.EventAdd()
+        gui.MessageDialog(f"已删除 {len(empty)} 个空物体。")
+        self._do_refresh()
 
     def _do_export(self):
         if not self._objects:
@@ -293,14 +325,24 @@ class MeshSorterDialog(gui.GeDialog):
                            name=f"  物体名称                    {sort_label}*   O",
                            borderstyle=c4d.BORDER_THIN_IN)
 
+        doc = c4d.documents.GetActiveDocument()
         for i, item in enumerate(objs[:100]):
             base = 4000 + i * 2
             name = item["name"]
-            if len(name) > 22:
-                name = name[:20] + ".."
+            # 检查是否选中
+            is_sel = False
+            obj = _find_object(doc, name) if doc else None
+            if obj:
+                try:
+                    is_sel = obj.GetBit(c4d.BIT_ACTIVE)
+                except Exception:
+                    pass
+            prefix = "▶ " if is_sel else "  "
+            if len(name) > 20:
+                name = name[:18] + ".."
             val = item["faces"] if self.sort_by == "faces" else item["size"]
             val_str = _fmt_num(val) if self.sort_by == "faces" else _fmt_size(val)
-            display = f"  {name:<22} {val_str:>6}"
+            display = f"{prefix}{name:<20} {val_str:>6}"
             self.GroupBegin(base, c4d.BFH_SCALEFIT, 2, 0, "")
             self.AddButton(base,     c4d.BFH_SCALEFIT, 290, 16, name=display)
             self.AddButton(base + 1, c4d.BFH_SCALEFIT, 20, 16, name="O")
