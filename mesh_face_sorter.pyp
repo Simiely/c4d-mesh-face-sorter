@@ -10,6 +10,7 @@ from c4d import gui, bitmaps
 
 PLUGIN_ID = 1052328
 PLUGIN_NAME = "Mesh Face Sorter"
+PLUGIN_VERSION = "v2.0.3"
 
 
 def _create_plugin_icon():
@@ -320,10 +321,16 @@ class MeshSorterDialog(gui.GeDialog):
         elif action == 1:  # 孤立
             try:
                 doc.StartUndo()
-                self._original_modes.clear()
+                # 只在第一次孤立时保存原始状态（关键修改）
+                if not self._original_modes:
+                    for o in _collect_all(doc):
+                        try:
+                            self._original_modes[o.GetGUID()] = o.GetEditorMode()
+                        except Exception:
+                            pass
+                # 设置孤立显示
                 for o in _collect_all(doc):
                     try:
-                        self._original_modes[o.GetGUID()] = o.GetEditorMode()
                         doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
                         if o == obj:
                             o.SetEditorMode(c4d.MODE_ON)
