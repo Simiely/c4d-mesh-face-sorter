@@ -106,6 +106,7 @@ class MeshSorterDialog(gui.GeDialog):
         self._sorted_objects = []  # 排序后的列表，用于行点击索引
         self.sort_by = "faces"
         self.descending = True
+        self._original_modes = {}  # 保存对象原始编辑器模式状态
 
     def CreateLayout(self):
         self.SetTitle("Mesh Face Sorter")
@@ -207,15 +208,32 @@ class MeshSorterDialog(gui.GeDialog):
         if doc is None:
             return
         count = 0
-        for obj in _collect_all(doc):
-            try:
-                mode = obj.GetEditorMode()
-                if mode != c4d.MODE_UNDEF or obj.GetBit(c4d.BIT_IGNOREDRAW):
-                    obj.SetEditorMode(c4d.MODE_UNDEF)
-                    obj.DelBit(c4d.BIT_IGNOREDRAW)
+        doc.StartUndo()
+        if self._original_modes:
+            for o, (mode, ignoredraw) in self._original_modes.items():
+                try:
+                    doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
+                    o.SetEditorMode(mode)
+                    if ignoredraw:
+                        o.SetBit(c4d.BIT_IGNOREDRAW)
+                    else:
+                        o.DelBit(c4d.BIT_IGNOREDRAW)
                     count += 1
-            except Exception:
-                pass
+                except Exception:
+                    pass
+            self._original_modes.clear()
+        else:
+            for o in _collect_all(doc):
+                try:
+                    mode = o.GetEditorMode()
+                    if mode != c4d.MODE_UNDEF or o.GetBit(c4d.BIT_IGNOREDRAW):
+                        doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
+                        o.SetEditorMode(c4d.MODE_UNDEF)
+                        o.DelBit(c4d.BIT_IGNOREDRAW)
+                        count += 1
+                except Exception:
+                    pass
+        doc.EndUndo()
         c4d.EventAdd()
         if count > 0:
             self._do_refresh()
@@ -311,11 +329,13 @@ class MeshSorterDialog(gui.GeDialog):
         elif action == 1:  # 孤立
             try:
                 doc.StartUndo()
+                self._original_modes.clear()
                 for o in _collect_all(doc):
                     try:
+                        self._original_modes[o] = (o.GetEditorMode(), o.GetBit(c4d.BIT_IGNOREDRAW))
                         doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
                         if o == obj:
-                            o.SetEditorMode(c4d.MODE_UNDEF)
+                            o.SetEditorMode(c4d.MODE_ON)
                             o.DelBit(c4d.BIT_IGNOREDRAW)
                         else:
                             o.SetEditorMode(c4d.MODE_OFF)
