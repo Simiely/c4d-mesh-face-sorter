@@ -6,10 +6,24 @@ License: MIT
 
 import c4d
 import datetime
-from c4d import gui
+from c4d import gui, bitmaps
 
 PLUGIN_ID = 1052328
 PLUGIN_NAME = "Mesh Face Sorter"
+
+
+def _create_plugin_icon():
+    import os
+    icon_path = os.path.join(os.path.dirname(__file__), "res", "icon.png")
+    bmp = bitmaps.BaseBitmap()
+    result = bmp.InitWith(icon_path)
+    if isinstance(result, tuple):
+        if result[0] != c4d.IMAGERESULT_OK:
+            return None
+    else:
+        if result != 0 and result != c4d.IMAGERESULT_OK:
+            return None
+    return bmp
 
 
 # ────────────── Helpers ──────────────
@@ -380,8 +394,9 @@ class MeshSorterCommand(c4d.plugins.CommandData):
 
 # ────────────── Registration ──────────────
 def main():
+    icon = _create_plugin_icon()
     ok = c4d.plugins.RegisterCommandPlugin(
-        PLUGIN_ID, PLUGIN_NAME, 0, None, "按面数/存储大小排列网格体", MeshSorterCommand(),
+        PLUGIN_ID, PLUGIN_NAME, 0, icon, "按面数/存储大小排列网格体", MeshSorterCommand(),
     )
     if ok:
         print("[MeshFaceSorter] 插件已加载")
