@@ -176,9 +176,10 @@ class MeshSorterDialog(gui.GeDialog):
                 if cur is None:
                     continue
                 try:
-                    r.append({"name": cur.GetName(),
-                              "faces": _count_faces_recursive(cur),
-                              "size": _estimate_size(cur)})
+                    if cur.IsInstanceOf(c4d.Opolygon):
+                        r.append({"name": cur.GetName(),
+                                  "faces": cur.GetPolygonCount(),
+                                  "size": _estimate_size(cur)})
                 except Exception:
                     pass
                 child = cur.GetDown()
