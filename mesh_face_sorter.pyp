@@ -211,25 +211,30 @@ class MeshSorterDialog(gui.GeDialog):
         count = 0
         doc.StartUndo()
         if self._original_modes:
-            for o, (mode, ignoredraw) in self._original_modes.items():
+            for o in _collect_all(doc):
                 try:
-                    doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                    o.SetEditorMode(mode)
-                    if ignoredraw:
-                        o.SetBit(c4d.BIT_IGNOREDRAW)
-                    else:
-                        o.DelBit(c4d.BIT_IGNOREDRAW)
-                    count += 1
+                    guid = o.GetGUID()
+                    if guid in self._original_modes:
+                        vis_editor, vis_render = self._original_modes[guid]
+                        doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
+                        o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = vis_editor
+                        o[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = vis_render
+                        if vis_editor != 0:
+                            o.DelBit(c4d.BIT_IGNOREDRAW)
+                        else:
+                            o.SetBit(c4d.BIT_IGNOREDRAW)
+                        count += 1
                 except Exception:
                     pass
             self._original_modes.clear()
         else:
             for o in _collect_all(doc):
                 try:
-                    mode = o.GetEditorMode()
-                    if mode != c4d.MODE_UNDEF or o.GetBit(c4d.BIT_IGNOREDRAW):
+                    vis_editor = o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR]
+                    if vis_editor == 0:
                         doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                        o.SetEditorMode(c4d.MODE_UNDEF)
+                        o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = 1
+                        o[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = 1
                         o.DelBit(c4d.BIT_IGNOREDRAW)
                         count += 1
                 except Exception:
@@ -333,13 +338,17 @@ class MeshSorterDialog(gui.GeDialog):
                 self._original_modes.clear()
                 for o in _collect_all(doc):
                     try:
-                        self._original_modes[o] = (o.GetEditorMode(), o.GetBit(c4d.BIT_IGNOREDRAW))
+                        vis_editor = o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR]
+                        vis_render = o[c4d.ID_BASEOBJECT_VISIBILITY_RENDER]
+                        self._original_modes[o.GetGUID()] = (vis_editor, vis_render)
                         doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
                         if o == obj:
-                            o.SetEditorMode(c4d.MODE_ON)
+                            o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = 1
+                            o[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = 1
                             o.DelBit(c4d.BIT_IGNOREDRAW)
                         else:
-                            o.SetEditorMode(c4d.MODE_OFF)
+                            o[c4d.ID_BASEOBJECT_VISIBILITY_EDITOR] = 0
+                            o[c4d.ID_BASEOBJECT_VISIBILITY_RENDER] = 0
                             o.SetBit(c4d.BIT_IGNOREDRAW)
                     except Exception:
                         pass
