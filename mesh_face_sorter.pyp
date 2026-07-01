@@ -87,10 +87,10 @@ def _collect_all(doc):
     return result
 
 
-def _find_object(doc, name):
+def _find_object(doc, guid):
     for obj in _collect_all(doc):
         try:
-            if obj.GetName() == name:
+            if obj.GetGUID() == guid:
                 return obj
         except Exception:
             pass
@@ -179,6 +179,7 @@ class MeshSorterDialog(gui.GeDialog):
                 try:
                     if cur.IsInstanceOf(c4d.Opolygon):
                         r.append({"name": cur.GetName(),
+                                  "guid": cur.GetGUID(),
                                   "faces": cur.GetPolygonCount(),
                                   "size": _estimate_size(cur)})
                 except Exception:
@@ -308,7 +309,7 @@ class MeshSorterDialog(gui.GeDialog):
         doc = c4d.documents.GetActiveDocument()
         if doc is None:
             return
-        obj = _find_object(doc, item["name"])
+        obj = _find_object(doc, item["guid"])
         if obj is None:
             return
 
@@ -374,7 +375,7 @@ class MeshSorterDialog(gui.GeDialog):
             name = item["name"]
             # 检查是否选中
             is_sel = False
-            obj = _find_object(doc, name) if doc else None
+            obj = _find_object(doc, item["guid"]) if doc else None
             if obj:
                 try:
                     is_sel = obj.GetBit(c4d.BIT_ACTIVE)
