@@ -208,31 +208,22 @@ class MeshSorterDialog(gui.GeDialog):
         doc = c4d.documents.GetActiveDocument()
         if doc is None:
             return
+        if not self._original_modes:
+            return
         count = 0
         doc.StartUndo()
-        if self._original_modes:
-            for o in _collect_all(doc):
-                try:
-                    guid = o.GetGUID()
-                    if guid in self._original_modes:
-                        doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                        o.SetEditorMode(self._original_modes[guid])
-                        if self._original_modes[guid] != c4d.MODE_OFF:
-                            o.DelBit(c4d.BIT_IGNOREDRAW)
-                        count += 1
-                except Exception:
-                    pass
-            self._original_modes.clear()
-        else:
-            for o in _collect_all(doc):
-                try:
-                    if o.GetEditorMode() == c4d.MODE_OFF:
-                        doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
-                        o.SetEditorMode(c4d.MODE_UNDEF)
+        for o in _collect_all(doc):
+            try:
+                guid = o.GetGUID()
+                if guid in self._original_modes:
+                    doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
+                    o.SetEditorMode(self._original_modes[guid])
+                    if self._original_modes[guid] != c4d.MODE_OFF:
                         o.DelBit(c4d.BIT_IGNOREDRAW)
-                        count += 1
-                except Exception:
-                    pass
+                    count += 1
+            except Exception:
+                pass
+        self._original_modes.clear()
         doc.EndUndo()
         c4d.EventAdd()
         if count > 0:
