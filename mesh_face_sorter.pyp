@@ -208,7 +208,9 @@ class MeshSorterDialog(gui.GeDialog):
         count = 0
         for obj in _collect_all(doc):
             try:
-                if obj.GetBit(c4d.BIT_IGNOREDRAW):
+                mode = obj.GetEditorMode()
+                if mode != c4d.MODE_UNDEF or obj.GetBit(c4d.BIT_IGNOREDRAW):
+                    obj.SetEditorMode(c4d.MODE_UNDEF)
                     obj.DelBit(c4d.BIT_IGNOREDRAW)
                     count += 1
             except Exception:
@@ -312,8 +314,10 @@ class MeshSorterDialog(gui.GeDialog):
                     try:
                         doc.AddUndo(c4d.UNDOTYPE_CHANGE_SMALL, o)
                         if o == obj:
+                            o.SetEditorMode(c4d.MODE_UNDEF)
                             o.DelBit(c4d.BIT_IGNOREDRAW)
                         else:
+                            o.SetEditorMode(c4d.MODE_OFF)
                             o.SetBit(c4d.BIT_IGNOREDRAW)
                     except Exception:
                         pass
