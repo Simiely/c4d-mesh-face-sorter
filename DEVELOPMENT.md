@@ -1,20 +1,40 @@
-# 开发文档
+# 开发文档（DEVELOPMENT.md）
 
-记录开发过程中的关键问题和解决思路。
+> 面向开发者的项目文档：架构说明 + 关键问题与方案（一坑一篇）。
+> 每个问题用统一格式：**TL;DR**（一句话结论）→ 问题 / 根因 / 解决 / 预防。
 
----
+## 项目概览
 
-## 1. 对话框显示空白
+C4D 插件（v2.0.3，兼容 C4D 2023-2026），单文件 `.pyp`。按面数/存储大小排列场景多边形物体，支持孤立显示、删除空物体、导出 Markdown 报表。
 
-**现象：** 面板打开后完全空白，没有任何控件。
+## 架构说明
 
-**原因：** 异步对话框的 Python 对象被垃圾回收了。
+```
+mesh_face_sorter.pyp
+├── CommandData（插件入口）
+│   ├── Execute()：切换式打开/关闭对话框（self._dlg 保持引用）
+│   └── RestoreLayout()：直接 return True（避免二次打开崩溃）
+├── Dialog（GeDialog 异步对话框）
+│   ├── CreateLayout()：排序控件 + 功能按钮 + 列表
+│   ├── _scan()：扫描场景多边形物体（GetGUID + GetPolygonCount + GetCache）
+│   ├── 排序逻辑：面数 / 存储大小，升降序切换
+│   ├── 孤立显示：SetEditorMode + BIT_IGNOREDRAW，状态快照保存/恢复
+│   ├── 删除空物体：面数=0 且无子级的安全删除
+│   └── 导出报表：Markdown 场景报告
+└── 数据层：_objects（原始）/ _sorted_objects（排序后），GUID 映射
+```
 
-`Execute()` 中用局部变量 `dlg = Dialog()`，函数返回后 `dlg` 被回收，C4D 窗口失去 Python 回调连接，显示空白。
+## 关键问题与方案
 
-**解决：** 用 `self._dlg` 保存引用，并将 `Execute` 改为切换式（打开/关闭）。
+### A. 对话框生命周期
 
-**思考：** C4D Python SDK 的「引用计数 + C++ 对象生命周期」容易踩坑。官方示例虽用 `global` 解决，但正确做法是 **CommandData 保持对话框引用**。
+#### A1. 面板打开后完全空白
+
+**TL;DR**：异步对话框的 Python 对象被垃圾回收了——`Execute()` 里用局部变量 `dlg`，函数返回后对象被回收，窗口失去回调连接显示空白。**CommandData 必须保持对话框引用**。
+
+- **问题**：面板打开后完全空白，无任何控件
+- **根因**：局部变量 `dlg` 在 `Execute()` 返回后被 GC 回收，C4D 窗口失去 Python 回调连接
+- **解决**：用 `self._dlg` 保存引用，Execute 改为切换式（打开/关闭）
 
 ```python
 if self._dlg is None or not self._dlg.IsOpen():
@@ -25,132 +45,126 @@ else:
     self._dlg = None
 ```
 
----
+- **预防**：对话框对象必须挂在 CommandData 实例上，不用局部变量；官方示例用 `global` 是偷懒做法
 
-## 2. 第二次打开崩溃
+#### A2. 第二次打开崩溃（RestoreLayout）
 
-**现象：** 第一次打开正常，关闭后再次打开 → C4D 崩溃。
+**TL;DR**：关闭后再次打开崩溃，根因是 `RestoreLayout()` 尝试 `Open()` 已销毁的旧对话框。**直接 `return True` 不做事**，并设 `dialogid=0`。
 
-**崩溃栈：** `Py_HashPointer` + `PyIter_Send` —— Python 尝试 hash 已释放的 C4D 对象。
+- **问题**：第一次打开正常，关闭后再次打开 → C4D 崩溃（栈：`Py_HashPointer` + `PyIter_Send`，hash 已释放的 C4D 对象）
+- **根因**：`RestoreLayout()` 未正确处理——用户关闭后 C4D 调用它恢复布局，它却 `Open()` 一个已销毁的对话框
+- **解决**：`RestoreLayout` 直接 `return True`（不做任何操作）+ `dialogid=0` 避免与插件 ID 冲突
+- **预防**：异步对话框生命周期有两个入口（Execute 和 RestoreLayout），两个都要处理
 
-**根因：** `RestoreLayout()` 未正确处理。C4D 可能在用户关闭对话框后调用 `RestoreLayout` 恢复布局，如果该函数尝试 `Open()` 一个已经销毁的旧对话框，导致崩溃。
+### B. UI 构建
 
-**解决：** `RestoreLayout` 直接返回 `True`（不做任何操作），加上 `dialogid=0` 避免与插件 ID 冲突。
+#### B1. GroupBegin 的 name 参数（按钮全消失）
 
-**思考：** C4D 对异步对话框的生命周期管理有两个入口（`Execute` 和 `RestoreLayout`），第二个很容易被忽略。在处理「第二次打开崩溃」时，花了多次迭代才定位到 `RestoreLayout`。
+**TL;DR**：`GroupBegin` 不接受 `name=`，它用 `title=`；写错会抛 TypeError，`CreateLayout` 提前退出导致后面控件全被跳过（无声故障）。
 
----
+- **问题**：添加排序下拉框后所有按钮都不显示
+- **根因**：`GroupBegin(id, flags, cols, rows, name="xxx")` 抛 `TypeError`，CreateLayout 提前退出
+- **解决**：去掉 `name=`，改用位置参数 `GroupBegin(id, flags, cols, rows, "xxx")`
+- **预防**：C4D 方法参数名与常规理解不一致（AddStaticText 用 `name=`，GroupBegin 用 `title=`），写 UI 前查 Python SDK 签名，别想当然
 
-## 3. 按钮不显示（GroupBegin 的 name 参数）
+#### B2. ScrollGroupEnd 不存在
 
-**现象：** 添加排序下拉框后，所有按钮都不显示了。
+**TL;DR**：C4D Python SDK 没有 `ScrollGroupEnd`（C++ SDK 有），用 `GroupEnd()` 结束滚动组。
 
-**根因：** `GroupBegin` 不接受 `name=` 关键词参数，它用的是 `title=`。错误写法 `GroupBegin(id, flags, cols, rows, name="xxx")` 抛出 `TypeError`，`CreateLayout` 提前退出，后面控件全部被跳过。
+- **问题**：C4D 2024 报 `AttributeError: 'GeDialog' has no attribute 'ScrollGroupEnd'`
+- **解决**：用 `GroupEnd()` 结束滚动组
+- **预防**：Python SDK 与 C++ SDK 不完全一致，以 Python SDK 文档为准
 
-**修复：** 去掉 `name=`，改用位置参数 `GroupBegin(id, flags, cols, rows, "xxx")`。
+### C. 可见性控制
 
-**思考：** C4D 很多方法的参数名与常规理解不同（`AddStaticText` 用 `name=`，`GroupBegin` 却用 `title=`）。这种不一致导致了一个无声崩溃 —— 没有错误弹窗，只有第一个 StaticText 可见。
+#### C1. Hide() 方法不存在
 
----
+**TL;DR**：`BaseObject.Hide()` 不存在；`SetBit(BIT_HIDDEN)` 无效果；`BIT_IGNOREDRAW` 是控制编辑器绘制可见性最直接的标志。
 
-## 4. 孤立显示无效（Hide() 不存在）
+- **问题**：点击 O 按钮物体没有隐藏（AttributeError 被 try/except 静默吞掉）
+- **根因**：C4D Python API 没有统一「隐藏/显示」接口，可见性分散在 Bit 标志、图层、描述参数中
+- **解决**：`SetBit(BIT_IGNOREDRAW)` 控制编辑器绘制可见性
+- **预防**：可见性功能先确认目标 API 存在，异常别静默吞掉
 
-**现象：** 点击 O 按钮后物体没有隐藏。
+#### C2. 老工程中孤立显示无效
 
-**根因：** C4D Python SDK 中 **`BaseObject.Hide()` 方法不存在**。第一次尝试 `SetBit(BIT_HIDDEN)` 无效果，第二次尝试 `Hide(True)` → `AttributeError` 被 try/except 静默吞掉。
+**TL;DR**：`BIT_IGNOREDRAW` 无法覆盖 Layer/编辑器模式设置；**`SetEditorMode(MODE_OFF/ON)` 最可靠**，配合 Bit 标志兼容。
 
-**修复：** 改用 `SetBit(BIT_IGNOREDRAW)` 控制编辑器绘制可见性。经测试 `BIT_IGNOREDRAW` 是 `BaseList2D` 中与可见性最直接相关的标志。
+- **问题**：新工程可用，老工程点击后无效果
+- **根因**：老工程对象可能属于 Layer，Layer 可见性覆盖对象级 Bit 标志（可见性层级：Layer > 对象 > Bit）
+- **解决**：改用 `SetEditorMode(c4d.MODE_OFF)` 隐藏 / `SetEditorMode(c4d.MODE_ON)` 显示，配合 `BIT_IGNOREDRAW`
+- **预防**：可见性操作统一走 `SetEditorMode`，Bit 标志只作兼容补充
 
-**思考：** C4D Python API 没有统一的「隐藏/显示」接口，可见性控制分散在 Bit 标志、图层参数、描述参数中。`BIT_IGNOREDRAW` 是最简单可靠的方案。
+#### C3. 显示全部影响之前的操作
 
----
+**TL;DR**：显示全部时不能强制全部显示，要恢复「孤立前的原始状态」——操作前保存快照，操作后恢复。
 
-## 5. 排序后选中错误
+- **问题**：孤立后点显示全部，连用户之前手动隐藏的对象也显示出来了
+- **根因**：显示全部时强制所有对象 `MODE_UNDEF`，没保存孤立前状态
+- **解决**：孤立前保存所有对象原始状态（编辑器模式 + BIT_IGNOREDRAW）到 `self._original_modes`，显示全部时恢复
+- **预防**：临时操作遵循「保存快照 → 操作 → 恢复」模式
 
-**现象：** 排序后列表顺序变了，点击第 2 行选中的却是错误物体。
+#### C4. 多次独显后无法恢复（状态快照语义）
 
-**根因：** 数据分两个列表：`_objects`（未排序）和 `_sorted_objects`（排序后显示）。`_handle_row` 用排序后的行索引去 `_objects` 中查找，取错了物体。
+**TL;DR**：快照要在**第一次进入临时状态时保存**，而不是每次切换都保存（否则只恢复到最后一次）；退出时恢复并清空。
 
-**修复：** 每次刷新列表时将排序结果存入 `self._sorted_objects`，`_handle_row` 一律用 `_sorted_objects` 查找。
+- **问题**：多次点击不同对象 O 按钮后，显示全部只能恢复到最后一次孤立前状态
+- **根因**：每次点击都 `self._original_modes.clear()` 再保存，快照被反复重置
+- **解决**：移除 clear()，只在 `_original_modes` 为空时保存；恢复后自动清空
 
-**思考：** 数据层和展示层分离时，必须保持「展示索引 → 数据索引」的一致映射。用独立字段保存排序后的列表比实时计算更安全。
+```python
+if not self._original_modes:   # 只在第一次独显时保存快照
+    self._original_modes = snapshot()
+```
 
----
+- **预防**：临时操作保存「进入临时状态前那一刻」的完整状态，不是「每次切换时」的状态
 
-## 6. ScrollGroupEnd 不存在
+### D. 数据一致性
 
-**现象：** C4D 2024 报 `AttributeError: 'GeDialog' has no attribute 'ScrollGroupEnd'`。
+#### D1. 排序后选中错误
 
-**修复：** 用 `GroupEnd()` 结束滚动组。
+**TL;DR**：数据层与展示层分离时，用独立字段保存排序后的列表（`_sorted_objects`），事件处理一律用它查找，保持「展示索引 → 数据索引」一致映射。
 
-**思考：** C4D Python SDK 中部分 API 与 C++ SDK 不完全一致（`ScrollGroupBegin` 存在但 `ScrollGroupEnd` 不存在）。开发时应以 Python SDK 文档为准。
+- **问题**：排序后点第 2 行选中的却是错误物体
+- **根因**：`_handle_row` 用排序后的行索引去未排序的 `_objects` 查找
+- **解决**：刷新时排序结果存入 `self._sorted_objects`，事件处理统一用它
 
----
+#### D2. 同名对象导致混乱
 
-## 7. 扫描参数化物体
+**TL;DR**：C4D 对象名称不唯一，**用 `GetGUID()` 作为唯一标识**保存和查找，不用名称。
 
-**现象：** `GetPolygonCount()` 对参数化物体（未 C 掉的立方体、球体）返回 0。
+- **问题**：多个同名对象时选中错误对象
+- **根因**：`_find_object(doc, name)` 返回第一个同名匹配
+- **解决**：`_scan()` 保存 `cur.GetGUID()`，查找用 GUID 精确匹配
 
-**修复：** 先用 `GetPolygonCount()`，如果为 0 且不是 `Opolygon` 类型，则尝试 `GetCache()` 获取生成后的多边形数据递归统计。
+#### D3. 父级组对象统计子级面数
 
-**思考：** C4D 的参数化物体没有直接的面数数据，需要通过缓存获取。`_count_faces_recursive()` 成为了整个插件的基石函数。
+**TL;DR**：只对 `c4d.Opolygon` 类型的对象统计面数，用 `GetPolygonCount()` 取单对象面数，不递归统计组对象子级。
 
----
+- **问题**：扫描时父级组对象把子级面数算进去，排在最前面
+- **根因**：`_scan()` 遍历所有对象（含组）并递归统计面数
+- **解决**：只统计 `c4d.Opolygon` 类型，`GetPolygonCount()` 直接取单对象面数
 
-## 8. 孤立显示在老工程中无效
+### E. 扫描统计
 
-**现象：** 新开工程可以使用孤立功能，但老工程中点击后物体没有隐藏。
+#### E1. 参数化物体面数为 0
 
-**根因：** `BIT_IGNOREDRAW` 无法覆盖 Layer 或明确的编辑器模式设置（Object Manager 中的眼睛/点图标）。老工程中的对象可能属于 Layer，Layer 的可见性设置会覆盖对象级别的 Bit 标志。
+**TL;DR**：未 C 掉的参数化物体（立方体/球体）`GetPolygonCount()` 返回 0；用 `GetCache()` 取生成后的多边形数据递归统计。`_count_faces_recursive()` 是整个插件的基石函数。
 
-**修复：** 改用 `SetEditorMode(c4d.MODE_OFF)` 隐藏对象，`SetEditorMode(c4d.MODE_ON)` 显示对象，同时配合 `BIT_IGNOREDRAW` 确保兼容性。
+- **问题**：参数化物体统计面数为 0
+- **根因**：参数化物体没有直接的面数数据
+- **解决**：`GetPolygonCount()` 为 0 且非 Opolygon 时，`GetCache()` 获取缓存后递归统计
 
-**思考：** C4D 的可见性控制层级较多：Layer 级别 > 对象级别 > Bit 标志。最可靠的方案是直接操作对象的编辑器模式。
+## 开发环境
 
----
+- Cinema 4D 2023 – 2026 + Python SDK（无构建工具，单文件 .pyp）
+- 验证：放入 C4D 插件目录重启
 
-## 9. 显示全部影响之前的操作
+## 版本演进
 
-**现象：** 使用孤立功能后，点击显示全部会取消所有对象的隐藏状态，包括用户之前手动隐藏的对象。
-
-**根因：** 显示全部时强制将所有对象设为 `MODE_UNDEF`，没有保存孤立前的原始状态。
-
-**修复：** 在孤立前保存所有对象的原始状态（编辑器模式 + BIT_IGNOREDRAW）到 `self._original_modes`，显示全部时恢复到原始状态而非强制取消隐藏。
-
-**思考：** 状态保存/恢复模式是实现「临时操作」的标准模式，需要在操作前记录状态，操作后根据需要恢复。
-
----
-
-## 10. 同名对象导致混乱
-
-**现象：** 场景中有多个同名对象时，点击列表中的某一行可能选中错误的对象。
-
-**根因：** 使用对象名称查找对象（`_find_object(doc, name)`），同名时返回第一个匹配的对象，导致选中错误。
-
-**修复：** 改用对象 GUID 查找（`_find_object(doc, guid)`）。在 `_scan()` 中保存 `cur.GetGUID()`，查找时用 GUID 精确匹配。
-
-**思考：** C4D 对象名称不唯一，必须使用 GUID 或对象指针作为唯一标识符。
-
----
-
-## 11. 父级组对象统计子级面数
-
-**现象：** 扫描时会把父级组对象的子级面数统计到父级上，导致父级排在最前面。
-
-**根因：** `_scan()` 会遍历所有对象（包括组对象），并使用 `_count_faces_recursive()` 统计递归面数。
-
-**修复：** 只对 `c4d.Opolygon` 类型的对象进行统计，使用 `cur.GetPolygonCount()` 直接获取单个对象的面数，不再递归统计子级。
-
-**思考：** 用户需要的是每个多边形对象的独立面数统计，而非组对象的累积面数。需要与 C4D 对象管理器的筛选逻辑保持一致。
-
----
-
-## 12. 多次独显后显示全部无法恢复
-
-**现象：** 多次点击不同对象的"O"按钮（孤立显示）后，点击"显示全部"只能恢复到最后一次孤立前的状态，无法恢复到最开始的状态。用户需要多次撤销才能回到初始状态。
-
-**原因：** 每次点击"孤立"按钮时都会执行 `self._original_modes.clear()`，导致只保存最后一次操作前的状态，`_original_modes` 被反复清空重置。
-
-**修复：** 移除 `self._original_modes.clear()`，改为条件判断：只在 `_original_modes` 为空时（即第一次点击"孤立"）才保存原始状态到 `_original_modes`。这样无论中间切换多少次孤立对象，"显示全部"都能根据 `_original_modes` 恢复到最开始的状态，并在恢复后自动清空 `_original_modes`。
-
-**思考：** 这是一个典型的「状态快照」语义问题。临时操作（如孤立显示）需要保存「进入临时状态前的那一刻」的完整状态，而不是「每次临时操作切换时」的状态。正确的做法是在第一次进入临时状态时保存快照，退出临时状态时恢复并清除快照。
+| 版本 | 核心变更 |
+|------|----------|
+| v2.0.0 | 排序 / 孤立显示 / 删除空物体 / 导出报表 / 显示全部 |
+| v2.0.1 | PNG 透明图标支持 |
+| v2.0.2 | 老工程孤立修复（SetEditorMode）/ GUID 查找 / 只统计纯多边形 |
+| v2.0.3 | 多次独显恢复修复（状态快照语义） |
