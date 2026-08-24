@@ -11,8 +11,8 @@
 ## 关键坑（改代码前必读）
 
 1. **对话框生命周期**：CommandData 必须用 `self._dlg` 保持对话框引用（局部变量会被垃圾回收导致面板空白）；`RestoreLayout()` 直接 `return True`，不要 `Open()` 旧对话框（否则二次打开崩溃）
-2. **可见性控制**：`BaseObject.Hide()` **不存在**；用 `SetEditorMode(c4d.MODE_OFF/ON)`（最可靠）+ `SetBit(BIT_IGNOREDRAW)` 兼容。孤立显示必须先保存原始状态快照（**只在第一次时保存**），显示全部时恢复并清空
-3. **对象标识用 GUID**：`GetGUID()` 保存/查找对象，**不要用名称**（场景同名对象会导致选中错误）
+2. **可见性控制**：`BaseObject.Hide()` **不存在**；用 `SetEditorMode(c4d.MODE_OFF/ON)`（最可靠）+ `SetBit(BIT_IGNOREDRAW)` 兼容。**v2.0.6 起不再保存状态快照**：孤立/显示全部均为无状态幂等操作（显示全部无条件遍历全场景恢复 `MODE_UNDEF` 并清除 `BIT_IGNOREDRAW`），避免重开窗口后状态丢失导致无法全部显示
+3. **对象标识直接持有引用**：列表项直接保存 `BaseObject` 引用（`GetGUID()` 是属性校验和、非持久 ID，官方文档确认），行点击时用 `IsAlive()` 校验对象仍存活；不要用名称（场景同名对象会导致选中错误）
 4. **API 参数命名坑**：`GroupBegin` 用 `title=` 不用 `name=`（`name=` 是 `AddStaticText` 的）；`ScrollGroupEnd` **不存在**，用 `GroupEnd()` 结束滚动组；C4D 部分 API 与 C++ SDK 文档不一致，以 Python SDK 为准
 5. **参数化物体面数**：`GetPolygonCount()` 对未 C 掉的参数化物体返回 0，需 `GetCache()` 取生成后的多边形递归统计
 
